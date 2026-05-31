@@ -60,6 +60,16 @@ const QUICK_PICKS = [
   "QA Engineer",
 ];
 
+const platformIcons: Record<string, string> = {
+  linkedin: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/LinkedIn_icon.svg/1280px-LinkedIn_icon.svg.png",
+  wordpress: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453",
+  indeed: "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/256x256/ff794fb897747bee7ebc1325d4b7a7da",
+  upwork: "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/upwork-icon.png",
+  dubizzle_jobs_uae: "https://static.dubizzle.com/frontend-web/static-resources/assets/images/dubizzle-logo@2x.png",
+  wellfound: "https://s3-eu-west-1.amazonaws.com/tpd/logos/6374d38ef759da4900b01966/0x0.png",
+  remotive: "https://logos-world.net/wp-content/uploads/2022/01/Remotive-Emblem.png",
+};
+
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -87,6 +97,15 @@ export default function TemplatesPage() {
     queryKey: ["jobTemplates"],
     queryFn: async () => {
       const { data, error } = await supabase.from("jobTemplates").select("*").order("id", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: sources } = useQuery({
+    queryKey: ["postingSources"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("postingSources").select("*").eq("isActive", true);
       if (error) throw error;
       return data;
     },
@@ -576,8 +595,29 @@ export default function TemplatesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to all active platforms (LinkedIn, Upwork, Indeed) in mock/sandbox mode.
+            <AlertDialogDescription asChild>
+              <div className="mt-2 text-slate-500">
+                This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the following active platforms:
+                {sources && sources.length > 0 ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {sources.map((s: any) => (
+                      <div key={s.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                        {platformIcons[s.platform] ? (
+                          <img src={platformIcons[s.platform]} alt={s.platform} className="h-5 w-5 shrink-0 object-contain" />
+                        ) : (
+                          <div className="h-5 w-5 shrink-0 rounded bg-slate-200" />
+                        )}
+                        <span className="text-sm font-medium text-slate-700">{s.name || s.platform}</span>
+                        {s.isMockMode && <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">Mock Mode</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                    No active platforms. Please configure platforms in the sources page before posting.
+                  </div>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

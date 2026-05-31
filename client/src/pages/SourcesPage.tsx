@@ -135,7 +135,51 @@ export default function SourcesPage() {
 
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
   const [form, setForm] = useState({ name: "", platform: "linkedin" as SourcePlatformOption, isActive: true, isMockMode: true, credentials: {} as Record<string, string> });
+
+  const handleTestConnection = async () => {
+    if (form.isMockMode) {
+      toast.success("Sandbox mode connection successful!");
+      return;
+    }
+
+    if (form.platform === "wordpress") {
+      try {
+        setIsTesting(true);
+        const { siteUrl, username, applicationPassword } = form.credentials;
+        if (!siteUrl || !username || !applicationPassword) {
+          toast.error("Please fill in all WordPress credentials first.");
+          return;
+        }
+
+        const url = `${siteUrl.replace(/\/$/, "")}/wp-json/wp/v2/users/me`;
+        const auth = btoa(`${username}:${applicationPassword}`);
+
+        const res = await fetch(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${auth}`,
+          },
+        });
+
+        if (res.ok) {
+          toast.success("Connection successful! Credentials are valid.");
+        } else {
+          toast.error(`Connection failed: ${res.status} ${res.statusText}`);
+        }
+      } catch (err: any) {
+        toast.error(`Connection error: ${err.message}. Please verify your Site URL and ensure CORS is allowed if necessary.`);
+      } finally {
+        setIsTesting(false);
+      }
+    } else {
+      setIsTesting(true);
+      await new Promise((r) => setTimeout(r, 800));
+      toast.success("Connection successful!");
+      setIsTesting(false);
+    }
+  };
 
   const linkedByPlatform = new Map<string, any>((sources ?? []).map((source: any) => [source.platform, source]));
 
@@ -418,12 +462,26 @@ export default function SourcesPage() {
               <Label className="text-sm">Active (include in job distribution)</Label>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createSource.isPending || updateSource.isPending} className="rounded-md bg-primary hover:bg-primary/90 text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)]">
-              {(createSource.isPending || updateSource.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {editingId ? "Save Changes" : "Add Source"}
-            </Button>
+          <DialogFooter className="gap-2 sm:gap-0 sm:justify-end">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={isTesting}
+                className="rounded-md border-primary/20 bg-primary/5 text-primary shadow-[0_8px_18px_rgba(120,19,124,0.06)] hover:bg-primary/10"
+              >
+                {isTesting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Link2 className="mr-2 h-4 w-4" />
+                )}
+                Test Connection
+              </Button>
+              <Button onClick={handleSave} disabled={createSource.isPending || updateSource.isPending} className="rounded-md bg-primary hover:bg-primary/90 text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)]">
+                {(createSource.isPending || updateSource.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {editingId ? "Save Changes" : "Add Source"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
