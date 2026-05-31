@@ -1,0 +1,56 @@
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import NotFound from "@/pages/NotFound";
+import { Route, Switch } from "wouter";
+import DashboardLayout from "./components/DashboardLayout";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import HirePage from "./pages/HirePage";
+import MyRequestsPage from "./pages/MyRequestsPage";
+import MyPostingsPage from "./pages/MyPostingsPage";
+import DashboardPage from "./pages/DashboardPage";
+import TemplatesPage from "./pages/TemplatesPage";
+import SourcesPage from "./pages/SourcesPage";
+import LogsPage from "./pages/LogsPage";
+import HomePage from "./pages/Home";
+
+import { AuthPage } from "./pages/AuthPage";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/auth" component={AuthPage} />
+      <Route>
+        <DashboardLayout>
+          <Switch>
+            <Route path="/" component={HomePage} />
+            <Route path="/hire" component={HirePage} />
+            <Route path="/my-requests" component={MyRequestsPage} />
+            <Route path="/my-postings" component={MyPostingsPage} />
+            <Route path="/dashboard" component={DashboardPage} />
+            <Route path="/templates" component={TemplatesPage} />
+            <Route path="/sources" component={SourcesPage} />
+            <Route path="/logs" component={LogsPage} />
+            <Route path="/404" component={NotFound} />
+            <Route component={NotFound} />
+          </Switch>
+        </DashboardLayout>
+      </Route>
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light">
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}
+
+export default App;
