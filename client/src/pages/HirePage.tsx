@@ -264,7 +264,7 @@ export default function HirePage() {
       setIsReadyToPost(false);
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
       queryClient.invalidateQueries({ queryKey: ['jobRequests'] });
-      navigate("/postings");
+      navigate("/my-postings");
     } catch {
       toast.error("Failed to post job. Please try again.");
     }
@@ -286,7 +286,7 @@ export default function HirePage() {
       setMessages([]);
       setIsReadyToPost(false);
       queryClient.invalidateQueries({ queryKey: ['jobRequests'] });
-      navigate("/requests");
+      navigate("/my-requests");
     } catch {
       toast.error("Failed to save draft. Please try again.");
     }
@@ -458,55 +458,72 @@ export default function HirePage() {
       )}
 
       {/* Review & Post / Save as Draft Dialog */}
-      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+      <Dialog open={showFinalizeDialog} onOpenChange={(open) => !open && !finalizeRequest.isPending && setShowFinalizeDialog(false)}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-[#10B981]" />
-              Review & Post Job
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label htmlFor="title" className="text-sm font-medium">Job Title *</Label>
-              <Input id="title" value={finalTitle} onChange={e => setFinalTitle(e.target.value)} className="mt-1" placeholder="e.g. Senior Frontend Developer" />
+          {finalizeRequest.isPending ? (
+            <div className="flex flex-col items-center justify-center py-10">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#10B981]/10 mb-6">
+                <Loader2 className="h-8 w-8 text-[#10B981] animate-spin" />
+              </div>
+              <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-900">Distributing Job...</h2>
+              <p className="text-sm text-slate-500 mt-2 text-center max-w-[280px]">
+                Please wait while we automatically post your job to all active platforms.
+              </p>
             </div>
-            <div>
-              <Label htmlFor="description" className="text-sm font-medium">Job Description *</Label>
-              <Textarea id="description" value={finalDescription} onChange={e => setFinalDescription(e.target.value)} className="mt-1 min-h-[150px]" placeholder="Full job description..." />
-            </div>
-            <div>
-              <Label htmlFor="requirements" className="text-sm font-medium">Requirements</Label>
-              <Textarea id="requirements" value={finalRequirements} onChange={e => setFinalRequirements(e.target.value)} className="mt-1 min-h-[100px]" placeholder="Required skills and qualifications..." />
-            </div>
-            <div>
-              <Label htmlFor="salary" className="text-sm font-medium">Salary Range</Label>
-              <Input id="salary" value={finalSalary} onChange={e => setFinalSalary(e.target.value)} className="mt-1" placeholder="e.g. $80,000 - $120,000" />
-            </div>
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-              <p className="text-xs text-primary font-medium">Posting will be distributed to all active platforms (LinkedIn, Upwork, Indeed) in mock/sandbox mode.</p>
-            </div>
-          </div>
-          <DialogFooter className="gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => setShowFinalizeDialog(false)} className="rounded-xl border-slate-200">Cancel</Button>
-            <Button
-              variant="outline"
-              onClick={handleSaveAsDraft}
-              disabled={!finalTitle || !finalDescription || saveAsDraft.isPending}
-              className="rounded-xl border-primary/40 text-primary hover:bg-primary/5"
-            >
-              {saveAsDraft.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <BookmarkCheck className="w-4 h-4 mr-2" />}
-              Save as Draft
-            </Button>
-            <Button
-              onClick={handleFinalize}
-              disabled={!finalTitle || !finalDescription || finalizeRequest.isPending}
-              className="rounded-xl bg-[#10B981] text-white hover:bg-emerald-600"
-            >
-              {finalizeRequest.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-              Post Job Now
-            </Button>
-          </DialogFooter>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-[#10B981]" />
+                  Review & Post Job
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <Label htmlFor="title" className="text-sm font-medium">Job Title *</Label>
+                  <Input id="title" value={finalTitle} onChange={e => setFinalTitle(e.target.value)} className="mt-1" placeholder="e.g. Senior Frontend Developer" />
+                </div>
+                <div>
+                  <Label htmlFor="description" className="text-sm font-medium">Job Description *</Label>
+                  <Textarea id="description" value={finalDescription} onChange={e => setFinalDescription(e.target.value)} className="mt-1 min-h-[150px]" placeholder="Full job description..." />
+                </div>
+                <div>
+                  <Label htmlFor="requirements" className="text-sm font-medium">Requirements</Label>
+                  <Textarea id="requirements" value={finalRequirements} onChange={e => setFinalRequirements(e.target.value)} className="mt-1 min-h-[100px]" placeholder="Required skills and qualifications..." />
+                </div>
+                <div>
+                  <Label htmlFor="salary" className="text-sm font-medium">Salary Range</Label>
+                  <Input id="salary" value={finalSalary} onChange={e => setFinalSalary(e.target.value)} className="mt-1" placeholder="e.g. $80,000 - $120,000" />
+                </div>
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                  <p className="text-xs text-primary font-medium">Posting will be distributed to all active platforms (LinkedIn, Upwork, Indeed, etc.).</p>
+                </div>
+              </div>
+              <DialogFooter className="gap-2 flex-wrap">
+                <Button variant="outline" onClick={() => setShowFinalizeDialog(false)} className="rounded-xl border-slate-200">Cancel</Button>
+                <Button
+                  variant="outline"
+                  onClick={handleSaveAsDraft}
+                  disabled={!finalTitle || !finalDescription || saveAsDraft.isPending}
+                  className="rounded-xl border-primary/40 text-primary hover:bg-primary/5"
+                >
+                  {saveAsDraft.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <BookmarkCheck className="w-4 h-4 mr-2" />}
+                  Save as Draft
+                </Button>
+                <Button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleFinalize();
+                  }}
+                  disabled={!finalTitle || !finalDescription || finalizeRequest.isPending}
+                  className="rounded-xl bg-[#10B981] text-white hover:bg-emerald-600"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Post Job Now
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

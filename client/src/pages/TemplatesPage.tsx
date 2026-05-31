@@ -152,6 +152,7 @@ export default function TemplatesPage() {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
         method: "POST",
         headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
@@ -164,7 +165,8 @@ export default function TemplatesPage() {
       toast.success("Job posted successfully to all active platforms!");
       queryClient.invalidateQueries({ queryKey: ["jobPostings"] });
       queryClient.invalidateQueries({ queryKey: ["jobRequests"] });
-      setLocation("/postings");
+      setPostingTemplateId(null);
+      setLocation("/my-postings");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -591,46 +593,65 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      <AlertDialog open={postingTemplateId !== null} onOpenChange={(open) => !open && setPostingTemplateId(null)}>
+      <AlertDialog open={postingTemplateId !== null} onOpenChange={(open) => !open && !postFromTemplate.isPending && setPostingTemplateId(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="mt-2 text-slate-500">
-                This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the following active platforms:
-                {sources && sources.length > 0 ? (
-                  <div className="mt-3 flex flex-col gap-2">
-                    {sources.map((s: any) => (
-                      <div key={s.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                        {platformIcons[s.platform] ? (
-                          <img src={platformIcons[s.platform]} alt={s.platform} className="h-5 w-5 shrink-0 object-contain" />
-                        ) : (
-                          <div className="h-5 w-5 shrink-0 rounded bg-slate-200" />
-                        )}
-                        <span className="text-sm font-medium text-slate-700">{s.name || s.platform}</span>
-                        {s.isMockMode && <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">Mock Mode</Badge>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                    No active platforms. Please configure platforms in the sources page before posting.
-                  </div>
-                )}
+          {postFromTemplate.isPending ? (
+            <div className="flex flex-col items-center justify-center py-10">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-6">
+                <Loader2 className="h-8 w-8 text-primary animate-spin" />
               </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-primary text-white hover:bg-primary/90"
-              onClick={() => postingTemplateId !== null && postFromTemplate.mutate({ templateId: postingTemplateId })}
-              disabled={postFromTemplate.isPending}
-            >
-              {postFromTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Post Job
-            </AlertDialogAction>
-          </AlertDialogFooter>
+              <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-900">Distributing Job...</h2>
+              <p className="text-sm text-slate-500 mt-2 text-center max-w-[280px]">
+                Please wait while we automatically post your job to all active platforms.
+              </p>
+            </div>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="mt-2 text-slate-500">
+                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the following active platforms:
+                    {sources && sources.length > 0 ? (
+                      <div className="mt-3 flex flex-col gap-2">
+                        {sources.map((s: any) => (
+                          <div key={s.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            {platformIcons[s.platform] ? (
+                              <img src={platformIcons[s.platform]} alt={s.platform} className="h-5 w-5 shrink-0 object-contain" />
+                            ) : (
+                              <div className="h-5 w-5 shrink-0 rounded bg-slate-200" />
+                            )}
+                            <span className="text-sm font-medium text-slate-700">{s.name || s.platform}</span>
+                            {s.isMockMode && <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">Mock Mode</Badge>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                        No active platforms. Please configure platforms in the sources page before posting.
+                      </div>
+                    )}
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-primary text-white hover:bg-primary/90"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (postingTemplateId !== null) {
+                      postFromTemplate.mutate({ templateId: postingTemplateId });
+                    }
+                  }}
+                  disabled={postFromTemplate.isPending || !sources || sources.length === 0}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Post Job
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
 
