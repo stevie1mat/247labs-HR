@@ -27,7 +27,9 @@ import {
   CheckCircle2,
   Eye,
   FileText,
+  LayoutGrid,
   Loader2,
+  List,
   Pencil,
   Plus,
   RotateCcw,
@@ -64,6 +66,7 @@ export default function TemplatesPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewingTemplate, setViewingTemplate] = useState<any | null>(null);
@@ -327,7 +330,7 @@ export default function TemplatesPage() {
 
         <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="h-12 min-w-[190px] rounded-xl border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <SelectTrigger className="!h-12 min-w-[190px] rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
             <SelectContent>
@@ -341,7 +344,7 @@ export default function TemplatesPage() {
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-12 min-w-[170px] rounded-xl border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <SelectTrigger className="!h-12 min-w-[170px] rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
               <SelectValue placeholder="All status" />
             </SelectTrigger>
             <SelectContent>
@@ -350,6 +353,25 @@ export default function TemplatesPage() {
               <SelectItem value="inactive">Inactive</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setViewMode(prev => prev === "grid" ? "list" : "grid")}
+            className="h-12 min-w-[132px] rounded-md border-slate-200 bg-white px-4 text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:bg-slate-50"
+          >
+            {viewMode === "grid" ? (
+              <>
+                <List className="mr-2 h-4 w-4" />
+                List view
+              </>
+            ) : (
+              <>
+                <LayoutGrid className="mr-2 h-4 w-4" />
+                Grid view
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -383,91 +405,167 @@ export default function TemplatesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+        <div className={viewMode === "grid" ? "grid gap-4 md:grid-cols-2 2xl:grid-cols-3" : "grid gap-3"}>
           {filteredTemplates.map((template: any) => (
             <Card key={template.id} className="h-full rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
-              <CardContent className="flex h-full flex-col p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 flex-1 items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold tracking-[-0.02em] text-slate-950">{template.title}</h3>
-                        <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs">v{template.version}</Badge>
-                        {template.category && <Badge className="rounded-lg border-primary/20 bg-primary/10 text-xs text-primary">{template.category}</Badge>}
-                        {!template.isActive && <Badge className="rounded-lg border-gray-200 bg-gray-100 text-xs text-gray-500">Inactive</Badge>}
+              <CardContent className={viewMode === "grid" ? "flex h-full flex-col p-5" : "p-5"}>
+                {viewMode === "grid" ? (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex min-w-0 flex-1 items-start gap-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                          <FileText className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{template.title}</h3>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs">v{template.version}</Badge>
+                            {template.category && <Badge className="rounded-lg border-primary/20 bg-primary/10 text-xs text-primary">{template.category}</Badge>}
+                            {!template.isActive && <Badge className="rounded-lg border-gray-200 bg-gray-100 text-xs text-gray-500">Inactive</Badge>}
+                          </div>
+                          <p className="mt-3 line-clamp-4 min-h-[6rem] text-sm leading-6 text-slate-500">{template.description}</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {template.salaryRange && (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                                {template.salaryRange}
+                              </div>
+                            )}
+                            {template.category && (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                                {template.category}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <p className="mt-3 line-clamp-4 min-h-[6rem] text-sm leading-6 text-slate-500">{template.description}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {template.salaryRange && (
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                            {template.salaryRange}
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        {!template.isActive && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+                            Archived
                           </div>
                         )}
-                        {template.category && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                            {template.category}
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex shrink-0 items-center gap-2">
-                    {!template.isActive && (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-                        Archived
+                    <div className="mt-5 flex-1" />
+
+                    <div className="flex flex-col gap-3 border-t border-slate-100 pt-4">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => setPostingTemplateId(template.id)}
+                          disabled={!template.isActive || postFromTemplate.isPending}
+                          className="h-9 flex-1 rounded-md bg-primary px-3 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
+                        >
+                          {postFromTemplate.isPending && postingTemplateId === template.id ? (
+                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="mr-1 h-3.5 w-3.5" />
+                          )}
+                          Post Job
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setLocation(`/hire?templateId=${template.id}`)}
+                          className="h-9 flex-1 rounded-md border-primary/20 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
+                        >
+                          <Shuffle className="mr-1 h-3.5 w-3.5" />
+                          Remix
+                        </Button>
                       </div>
-                    )}
-                  </div>
-                </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setViewingTemplate(template)}
+                          className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/5 hover:text-primary"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(template)} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/10 hover:text-primary">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 flex-1 items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                        <FileText className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{template.title}</h3>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs">v{template.version}</Badge>
+                          {template.category && <Badge className="rounded-lg border-primary/20 bg-primary/10 text-xs text-primary">{template.category}</Badge>}
+                          {!template.isActive && <Badge className="rounded-lg border-gray-200 bg-gray-100 text-xs text-gray-500">Inactive</Badge>}
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{template.description}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {template.salaryRange && (
+                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                              {template.salaryRange}
+                            </div>
+                          )}
+                          {template.category && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                              {template.category}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-                <div className="mt-5 flex-1" />
-
-                <div className="flex flex-col gap-3 border-t border-slate-100 pt-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => setPostingTemplateId(template.id)}
-                      disabled={!template.isActive || postFromTemplate.isPending}
-                      className="h-9 flex-1 rounded-md bg-primary px-3 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
-                    >
-                      {postFromTemplate.isPending && postingTemplateId === template.id ? (
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Send className="mr-1 h-3.5 w-3.5" />
-                      )}
-                      Post Job
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setLocation(`/hire?templateId=${template.id}`)}
-                      className="h-9 flex-1 rounded-md border-primary/20 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
-                    >
-                      <Shuffle className="mr-1 h-3.5 w-3.5" />
-                      Remix
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => setPostingTemplateId(template.id)}
+                        disabled={!template.isActive || postFromTemplate.isPending}
+                        className="h-9 rounded-md bg-primary px-3 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
+                      >
+                        {postFromTemplate.isPending && postingTemplateId === template.id ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Send className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Post Job
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLocation(`/hire?templateId=${template.id}`)}
+                        className="h-9 rounded-md border-primary/20 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
+                      >
+                        <Shuffle className="mr-1 h-3.5 w-3.5" />
+                        Remix
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setViewingTemplate(template)}
+                        className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/5 hover:text-primary"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(template)} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/10 hover:text-primary">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setViewingTemplate(template)}
-                      className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/5 hover:text-primary"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(template)} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/10 hover:text-primary">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           ))}

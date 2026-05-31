@@ -73,8 +73,76 @@ serve(async (req) => {
 
     const results = [];
     for (const source of sources || []) {
-        await simulateDelay(500, 1000);
-        const success = source.isMockMode ? Math.random() > 0.1 : false;
+        let success = false;
+        let externalUrl = null;
+        let errorMessage = null;
+        let externalJobId = null;
+
+        if (source.isMockMode) {
+            await simulateDelay(500, 1000);
+            success = Math.random() > 0.1;
+            if (success) {
+                externalJobId = `${source.platform.toUpperCase()}-${Math.random().toString(36).substring(7)}`;
+                externalUrl = `https://${source.platform}.com/jobs/view/123`;
+            } else {
+                errorMessage = `[MOCK] ${source.platform} API Error`;
+            }
+        } else if (source.platform === 'wordpress') {
+            try {
+                const creds = source.credentials || {};
+                let siteUrl = creds.siteUrl?.replace(/\/$/, "");
+                const username = creds.username;
+                const password = creds.applicationPassword;
+                const postType = creds.postType || "career";
+
+                if (!siteUrl || !username || !password) {
+                    throw new Error("Missing WordPress credentials");
+                }
+
+                const apiUrl = `${siteUrl}/wp-json/wp/v2/${postType}`;
+                const auth = btoa(`${username}:${password}`);
+
+                const payload = {
+                    title: posting.title,
+                    status: "publish",
+                    acf: {
+                        location: "Remote",
+                        company_overview: posting.description || "",
+                        key_responsibilities: posting.requirements || "",
+                        desirable_skills: "",
+                        qualifications: "",
+                        additional_information: posting.salaryRange ? `Salary: ${posting.salaryRange}` : "",
+                        join_our_team: "Apply now!"
+                    }
+                };
+
+                const res = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Basic ${auth}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`WordPress API error: ${res.status} ${text}`);
+                }
+
+                const data = await res.json();
+                success = true;
+                externalJobId = data.id?.toString();
+                externalUrl = data.link;
+
+            } catch (err: any) {
+                success = false;
+                errorMessage = err.message || "Unknown error connecting to WordPress";
+            }
+        } else {
+            success = false;
+            errorMessage = `Live mode not yet implemented for ${source.platform}`;
+        }
         
         const result = {
             postingId: posting.id,
@@ -83,9 +151,9 @@ serve(async (req) => {
             postingSourceId: source.id,
             platform: source.platform,
             status: success ? 'success' : 'failed',
-            externalJobId: success ? `${source.platform.toUpperCase()}-${Math.random().toString(36).substring(7)}` : null,
-            externalUrl: success ? `https://${source.platform}.com/jobs/view/123` : null,
-            errorMessage: success ? null : `[MOCK] ${source.platform} API Error`,
+            externalJobId,
+            externalUrl,
+            errorMessage,
             attemptCount: 1,
             lastAttemptAt: new Date().toISOString(),
             attemptedAt: new Date().toISOString()

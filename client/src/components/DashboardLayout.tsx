@@ -46,14 +46,17 @@ import { FloatingHRIcons } from "./FloatingHRIcons";
 
 // ─── Navigation Config ────────────────────────────────────────────────────────
 const hiringManagerItems = [
+  { icon: FileText, label: "Job Templates", path: "/templates" },
+  { icon: Briefcase, label: "My Job Postings", path: "/my-postings" },
   { icon: MessageSquarePlus, label: "New Hire Request", path: "/hire" },
   { icon: ListChecks, label: "My Requests", path: "/my-requests" },
-  { icon: Briefcase, label: "My Job Postings", path: "/my-postings" },
 ];
 
 const hrAdminItems = [
   { icon: BarChart3, label: "HR Dashboard", path: "/dashboard" },
-  { icon: FileText, label: "Job Templates", path: "/templates" },
+];
+
+const distributionItems = [
   { icon: Globe, label: "Posting Sources", path: "/sources" },
   { icon: ScrollText, label: "Posting Logs", path: "/logs" },
 ];
@@ -178,7 +181,11 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
 
   const isAdmin = user?.role === "hr_admin" || user?.role === "admin";
-  const allItems = [...hiringManagerItems, ...(isAdmin ? hrAdminItems : [])];
+  const allItems = [
+    ...hiringManagerItems,
+    ...(isAdmin ? hrAdminItems : []),
+    ...(isAdmin ? distributionItems : []),
+  ];
   const activeMenuItem = allItems.find(item => item.path === location);
 
   const roleBadgeLabel = isAdmin ? "HR Admin" : "Hiring Manager";
@@ -300,6 +307,34 @@ function DashboardLayoutContent({
                 })}
               </SidebarMenu>
             </SidebarGroup>
+
+            {isAdmin && (
+              <SidebarGroup className="mt-2">
+                {!isCollapsed && (
+                  <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
+                    Distribution
+                  </SidebarGroupLabel>
+                )}
+                <SidebarMenu className="px-2">
+                  {distributionItems.map(item => {
+                    const isActive = location === item.path;
+                    return (
+                      <SidebarMenuItem key={item.path}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          onClick={() => setLocation(item.path)}
+                          tooltip={item.label}
+                          className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
+                        >
+                          <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                          <span className="text-base">{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroup>
+            )}
           </SidebarContent>
         </Sidebar>
 
