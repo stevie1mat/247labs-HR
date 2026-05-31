@@ -1,6 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +10,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -34,14 +32,15 @@ import {
   LogOut,
   MessageSquarePlus,
   PanelLeft,
+  Search,
   ScrollText,
-  Settings,
   Zap,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { SwirlingBackground } from "./SwirlingBackground";
 import { FloatingHRIcons } from "./FloatingHRIcons";
 
@@ -59,10 +58,10 @@ const hrAdminItems = [
   { icon: ScrollText, label: "Posting Logs", path: "/logs" },
 ];
 
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 260;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 360;
+const SIDEBAR_WIDTH_KEY = "sidebar-width-v2";
+const DEFAULT_WIDTH = 320;
+const MIN_WIDTH = 260;
+const MAX_WIDTH = 480;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -183,7 +182,7 @@ function DashboardLayoutContent({
   const activeMenuItem = allItems.find(item => item.path === location);
 
   const roleBadgeLabel = isAdmin ? "HR Admin" : "Hiring Manager";
-  const roleBadgeColor = isAdmin ? "bg-[#8B5CF6]/10 text-[#8B5CF6] border-[#8B5CF6]/20" : "bg-emerald-50 text-emerald-700 border-emerald-200";
+  const currentPageTitle = activeMenuItem?.label ?? "247 Labs HR";
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -214,62 +213,41 @@ function DashboardLayoutContent({
   return (
     <>
       <div className="relative" ref={sidebarRef}>
-        <Sidebar collapsible="icon" className="border-r-0" disableTransition={isResizing}>
-          {/* Header */}
-          <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
-            <div className="flex items-center gap-3 px-2 w-full">
+        <Sidebar collapsible="icon" className="border-r-0 overflow-hidden" disableTransition={isResizing}>
+          {/* Subtle Swirl specifically for the dark sidebar */}
+          <div className="absolute inset-0 z-0 opacity-40 pointer-events-none group-data-[collapsible=icon]:opacity-0 transition-opacity duration-300">
+            <div className="absolute top-[-100px] left-[-100px] w-[300px] h-[300px] bg-[#78137C] rounded-full mix-blend-screen filter blur-[80px] animate-pulse" />
+            <div className="absolute bottom-0 right-[-100px] w-[400px] h-[400px] bg-blue-600/30 rounded-full mix-blend-screen filter blur-[100px] animate-pulse" style={{ animationDelay: '2s' }} />
+          </div>
+
+          <SidebarHeader className="relative z-10 h-20 justify-center border-b border-sidebar-border/50 bg-transparent">
+            <div className="flex items-center gap-4 px-2 w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none shrink-0"
+                className="h-10 w-10 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none shrink-0"
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-sidebar-foreground/60" />
+                <PanelLeft className="h-5 w-5 text-sidebar-foreground/60" />
               </button>
               {!isCollapsed && (
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-6 h-6 rounded-md bg-[#8B5CF6] flex items-center justify-center shrink-0">
-                    <Zap className="w-3 h-3 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-sidebar-foreground truncate leading-none">247 Labs</p>
-                    <p className="text-[10px] text-sidebar-foreground/50 truncate mt-0.5">HR Platform</p>
-                  </div>
+                <div className="flex flex-col items-start min-w-0">
+                  <img 
+                    src="https://247labs.com/wp-content/uploads/2023/03/Group-10.png" 
+                    alt="247 Labs Logo" 
+                    className="h-8 w-auto object-contain brightness-0 invert mb-0.5"
+                  />
+                  <p className="text-[10px] font-semibold tracking-[0.15em] text-white/50 uppercase ml-[8px]">
+                    HR Platform
+                  </p>
                 </div>
               )}
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 py-2">
-            {/* Hiring Manager Section */}
-            <SidebarGroup>
-              {!isCollapsed && (
-                <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
-                  Hiring
-                </SidebarGroupLabel>
-              )}
-              <SidebarMenu className="px-2">
-                {hiringManagerItems.map(item => {
-                  const isActive = location === item.path;
-                  return (
-                    <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => setLocation(item.path)}
-                        tooltip={item.label}
-                        className={`h-9 transition-all font-normal ${isActive ? "bg-[#8B5CF6]/15 text-[#8B5CF6]" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
-                      >
-                        <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#8B5CF6]" : ""}`} />
-                        <span className="text-sm">{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroup>
-
+          <SidebarContent className="relative z-10 gap-0 py-2 bg-transparent">
             {/* HR Admin Section */}
             {isAdmin && (
-              <SidebarGroup className="mt-2">
+              <SidebarGroup>
                 {!isCollapsed && (
                   <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
                     Administration
@@ -284,10 +262,10 @@ function DashboardLayoutContent({
                           isActive={isActive}
                           onClick={() => setLocation(item.path)}
                           tooltip={item.label}
-                          className={`h-9 transition-all font-normal ${isActive ? "bg-[#8B5CF6]/15 text-[#8B5CF6]" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
+                          className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
                         >
-                          <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-[#8B5CF6]" : ""}`} />
-                          <span className="text-sm">{item.label}</span>
+                          <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                          <span className="text-base">{item.label}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     );
@@ -295,41 +273,34 @@ function DashboardLayoutContent({
                 </SidebarMenu>
               </SidebarGroup>
             )}
-          </SidebarContent>
 
-          {/* Footer */}
-          <SidebarFooter className="p-3 border-t border-sidebar-border">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none">
-                  <Avatar className="h-8 w-8 shrink-0 border border-sidebar-border">
-                    <AvatarFallback className="text-xs font-semibold bg-[#8B5CF6] text-white">
-                      {user?.name?.charAt(0).toUpperCase() ?? "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  {!isCollapsed && (
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-sidebar-foreground truncate leading-none">{user?.name || "User"}</p>
-                      <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full border mt-1 ${roleBadgeColor}`}>
-                        {roleBadgeLabel}
-                      </span>
-                    </div>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarFooter>
+            {/* Hiring Manager Section */}
+            <SidebarGroup className={isAdmin ? "mt-2" : ""}>
+              {!isCollapsed && (
+                <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
+                  Hiring
+                </SidebarGroupLabel>
+              )}
+              <SidebarMenu className="px-2">
+                {hiringManagerItems.map(item => {
+                  const isActive = location === item.path;
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.path)}
+                        tooltip={item.label}
+                        className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
+                      >
+                        <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                        <span className="text-base">{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroup>
+          </SidebarContent>
         </Sidebar>
 
         {/* Resize handle */}
@@ -341,15 +312,57 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-4 backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger className="h-9 w-9 rounded-lg" />
-              <span className="font-medium text-sm">{activeMenuItem?.label ?? "247 Labs HR"}</span>
+        <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
+          <div className="flex flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              {isMobile && <SidebarTrigger className="h-10 w-10 rounded-lg border border-slate-200 bg-white" />}
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Workspace</p>
+                <h1 className="truncate text-xl font-semibold tracking-[-0.03em] text-slate-950">{currentPageTitle}</h1>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
+              <div className="relative min-w-0 sm:w-[280px] lg:w-[340px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="search"
+                  placeholder="Search jobs, templates, sources..."
+                  className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-none placeholder:text-slate-400 focus-visible:bg-white"
+                />
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex h-11 items-center gap-3 rounded-lg border border-slate-200 bg-white px-2 pr-4 text-left shadow-sm transition-colors hover:bg-slate-50 focus:outline-none">
+                    <Avatar className="h-8 w-8 border border-slate-200">
+                      <AvatarFallback className="bg-slate-950 text-xs font-semibold text-white">
+                        {user?.name?.charAt(0).toUpperCase() ?? "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{user?.name || "User"}</p>
+                      <p className="truncate text-xs text-slate-500">{roleBadgeLabel}</p>
+                    </div>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-        )}
-        <main className="flex-1 p-6 bg-[#F9FAFB] min-h-screen">{children}</main>
+        </div>
+
+        <main className="flex-1 min-h-screen bg-[#F9FAFB] p-4 sm:p-6">{children}</main>
       </SidebarInset>
     </>
   );

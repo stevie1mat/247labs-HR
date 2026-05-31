@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { corsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 const HR_SYSTEM_PROMPT = `You are an expert HR assistant for 247 Labs, a leading software and digital transformation company based in Toronto. Your job is to help hiring managers create professional job descriptions through a friendly conversation.
 
@@ -27,6 +31,38 @@ IMPORTANT: After EVERY response (except the final ready-to-post one), you MUST a
 When you have generated the final job description and the user has confirmed it, you MUST end your response with a JSON block in this exact format (no markdown code fences around it, just the raw JSON on its own line):
 [READY_TO_POST]
 {"jobTitle":"<exact job title>","requirements":"<requirements as plain text>","salaryRange":"<salary range or empty string>"}`;
+
+type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+  timestamp?: number;
+};
+
+function getAiConfig() {
+  const provider = (Deno.env.get("AI_PROVIDER") ?? "groq").toLowerCase();
+
+  if (provider === "openai") {
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
+
+    return {
+      provider,
+      apiKey,
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      model: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
+    };
+  }
+
+  const apiKey = Deno.env.get("GROQ_API_KEY");
+  if (!apiKey) throw new Error("GROQ_API_KEY is missing");
+
+  return {
+    provider: "groq",
+    apiKey,
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    model: Deno.env.get("AI_MODEL") ?? "openai/gpt-oss-20b",
+  };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -69,23 +105,22 @@ serve(async (req) => {
         ? `\n\nAvailable job templates in the database:\n${templates.map(t => `- "${t.title}" (v${t.version}): ${t.description.substring(0, 100)}...`).join("\n")}`
         : "";
 
-    const messages = [
+    const messages: ChatMessage[] = [
       { role: "system", content: HR_SYSTEM_PROMPT + templateContext },
       ...history,
       { role: "user", content: message }
     ];
 
-    const apiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
+    const ai = getAiConfig();
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(ai.endpoint, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${ai.apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: ai.model,
         messages
       })
     });

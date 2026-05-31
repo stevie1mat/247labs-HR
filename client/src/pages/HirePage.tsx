@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
-import { Send, Bot, User, Loader2, CheckCircle2, Sparkles, Plus, BookmarkCheck } from "lucide-react";
+import { Send, Bot, User, Loader2, CheckCircle2, Plus, BookmarkCheck, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,7 @@ type Message = {
 export default function HirePage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [requestId, setRequestId] = useState<number | null>(null);
+  const [requestId, setRequestId] = useState<string | number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isReadyToPost, setIsReadyToPost] = useState(false);
@@ -35,13 +35,23 @@ export default function HirePage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const createRequest = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (seed?: {
+      title?: string;
+      description?: string;
+      requirements?: string;
+      salaryRange?: string;
+      conversationHistory?: Array<{ role: string; content: string; timestamp: number }>;
+    }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Not logged in");
         const { data, error } = await supabase.from('jobRequests').insert({
             createdById: user.id,
             status: 'draft',
-            conversationHistory: []
+            title: seed?.title,
+            finalDescription: seed?.description,
+            finalRequirements: seed?.requirements,
+            salaryRange: seed?.salaryRange,
+            conversationHistory: seed?.conversationHistory ?? []
         }).select().single();
         if (error) throw error;
         return data;
@@ -49,7 +59,7 @@ export default function HirePage() {
   });
 
   const sendMessage = useMutation({
-    mutationFn: async ({ requestId, message }: { requestId: number, message: string }) => {
+    mutationFn: async ({ requestId, message }: { requestId: string | number, message: string }) => {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
             method: 'POST',
@@ -111,9 +121,74 @@ export default function HirePage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const templateId = params.get("templateId");
+    const mode = params.get("mode");
+
+    if (requestId || createRequest.isPending || messages.length > 0) return;
+
+    if (templateId) {
+      void (async () => {
+        try {
+          const { data: template, error } = await supabase
+            .from("jobTemplates")
+            .select("*")
+            .eq("id", templateId)
+            .single();
+
+          if (error) throw error;
+          if (!template) throw new Error("Template not found");
+
+          const seededAssistantMessage = {
+            role: "assistant" as const,
+            content: `I've loaded **${template.title}** as a starting point. We can remix this role, adjust the requirements, update the salary range, and turn it into a new hiring request.\n\nWhat would you like to change first?`,
+            timestamp: Date.now(),
+            suggestions: [
+              "Make it more senior",
+              "Adjust the salary range",
+              "Rewrite the responsibilities",
+              "Add remote work option",
+            ],
+          };
+
+          const seededHistory = [
+            {
+              role: "assistant",
+              content: `Template loaded for remix: ${template.title}`,
+              timestamp: Date.now(),
+            },
+          ];
+
+          const req = await createRequest.mutateAsync({
+            title: template.title,
+            description: template.description ?? "",
+            requirements: template.requirements ?? "",
+            salaryRange: template.salaryRange ?? "",
+            conversationHistory: seededHistory,
+          });
+
+          setRequestId(req.id);
+          setMessages([seededAssistantMessage]);
+          setFinalTitle(template.title ?? "");
+          setFinalDescription(template.description ?? "");
+          setFinalRequirements(template.requirements ?? "");
+          setFinalSalary(template.salaryRange ?? "");
+        } catch {
+          toast.error("Failed to load template for remix.");
+        }
+      })();
+      return;
+    }
+
+    if (mode === "generate") {
+      void startNewRequest();
+    }
+  }, [requestId, createRequest.isPending, messages.length]);
+
   const startNewRequest = async () => {
     try {
-      const req = await createRequest.mutateAsync();
+      const req = await createRequest.mutateAsync(undefined);
       if (req) {
         setRequestId(req.id);
         setMessages([{
@@ -130,6 +205,10 @@ export default function HirePage() {
           ],
         }]);
         setIsReadyToPost(false);
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("templateId") || params.has("mode")) {
+          window.history.replaceState({}, "", "/hire");
+        }
       }
     } catch {
       toast.error("Failed to start a new request. Please try again.");
@@ -224,32 +303,21 @@ export default function HirePage() {
   const lastAssistantIdx = messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i !== -1).at(-1) ?? -1;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-lg bg-[#8B5CF6] flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-[#1F2937]">New Hire Request</h1>
-        </div>
-        <p className="text-sm text-gray-500 ml-11">Chat with Manus AI to create and post a job in minutes</p>
-      </div>
-
+    <div className="w-full h-full flex flex-col">
       {!requestId ? (
         /* Start Screen */
-        <Card className="border-0 shadow-sm bg-white">
-          <CardContent className="pt-12 pb-12 flex flex-col items-center gap-6 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-[#8B5CF6]/10 flex items-center justify-center">
-              <Bot className="w-8 h-8 text-[#8B5CF6]" />
+        <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+          <CardContent className="flex flex-col items-center gap-6 px-6 py-12 text-center sm:px-10">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Bot className="h-8 w-8" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-[#1F2937] mb-2">AI-Powered Hiring Assistant</h2>
-              <p className="text-gray-500 max-w-md text-sm leading-relaxed">
+              <h2 className="mb-2 text-xl font-semibold tracking-[-0.02em] text-slate-950">AI-Powered Hiring Assistant</h2>
+              <p className="max-w-md text-sm leading-7 text-slate-500">
                 Start a conversation to create a job posting. The AI will ask clarifying questions, suggest quick answers, and generate a professional job description ready to post on LinkedIn, Upwork, and Indeed.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 justify-center">
+            <div className="flex flex-wrap justify-center gap-2">
               {[
                 "Hire a Full Stack Developer",
                 "Need a React Native Developer",
@@ -261,7 +329,7 @@ export default function HirePage() {
                 <button
                   key={example}
                   onClick={() => startNewRequest().then(() => setInput(example))}
-                  className="px-3 py-1.5 text-xs rounded-full border border-[#8B5CF6]/30 text-[#8B5CF6] hover:bg-[#8B5CF6]/5 transition-colors"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
                 >
                   {example}
                 </button>
@@ -270,7 +338,7 @@ export default function HirePage() {
             <Button
               onClick={startNewRequest}
               disabled={createRequest.isPending}
-              className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white px-8"
+              className="h-11 rounded-xl bg-primary px-8 text-white hover:bg-primary/90"
             >
               {createRequest.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
               Start New Request
@@ -280,36 +348,36 @@ export default function HirePage() {
       ) : (
         /* Chat Interface */
         <div className="flex flex-col gap-4">
-          <Card className="border-0 shadow-sm bg-white flex flex-col" style={{ height: "calc(100vh - 280px)", minHeight: "400px" }}>
-            <CardHeader className="pb-3 border-b flex-row items-center justify-between">
+          <Card className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)]" style={{ height: "calc(100vh - 280px)", minHeight: "400px" }}>
+            <CardHeader className="flex-row items-center justify-between border-b border-slate-200 pb-4">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-                <span className="text-sm font-medium text-[#1F2937]">Manus AI Assistant</span>
+                <div className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
+                <span className="text-sm font-medium text-slate-950">Manus AI Assistant</span>
               </div>
               <div className="flex items-center gap-2">
                 {isReadyToPost && (
-                  <Badge className="bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20 text-xs">
+                  <Badge className="rounded-lg border-[#10B981]/20 bg-[#10B981]/10 text-xs text-[#10B981]">
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     Ready to Post
                   </Badge>
                 )}
-                <Button variant="outline" size="sm" onClick={() => { setRequestId(null); setMessages([]); setIsReadyToPost(false); }} className="text-xs h-7">
+                <Button variant="outline" size="sm" onClick={() => { setRequestId(null); setMessages([]); setIsReadyToPost(false); }} className="h-8 rounded-lg border-slate-200 text-xs text-slate-700">
                   New Request
                 </Button>
               </div>
             </CardHeader>
 
             {/* Messages */}
-            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+            <CardContent className="flex-1 space-y-4 overflow-y-auto bg-slate-50/50 p-4">
               {messages.map((msg, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   <div className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${msg.role === "assistant" ? "bg-[#8B5CF6]" : "bg-[#1F2937]"}`}>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${msg.role === "assistant" ? "bg-primary" : "bg-slate-950"}`}>
                       {msg.role === "assistant" ? <Bot className="w-3.5 h-3.5 text-white" /> : <User className="w-3.5 h-3.5 text-white" />}
                     </div>
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${msg.role === "assistant" ? "bg-gray-50 text-[#1F2937] rounded-tl-sm" : "bg-[#8B5CF6] text-white rounded-tr-sm"}`}>
+                    <div className={`max-w-[80%] rounded-xl border px-4 py-3 text-sm shadow-sm ${msg.role === "assistant" ? "border-slate-200 bg-white text-slate-900" : "border-primary bg-primary text-white"}`}>
                       {msg.role === "assistant" ? (
-                        <div className="prose prose-sm max-w-none prose-headings:text-[#1F2937] prose-p:text-[#1F2937]">
+                        <div className="prose prose-sm max-w-none prose-headings:text-slate-900 prose-p:text-slate-900">
                           <Streamdown>{msg.content}</Streamdown>
                         </div>
                       ) : (
@@ -324,7 +392,7 @@ export default function HirePage() {
                         <button
                           key={si}
                           onClick={() => handleSend(suggestion)}
-                          className="px-3 py-1.5 text-xs rounded-full border border-[#8B5CF6]/40 text-[#8B5CF6] bg-[#8B5CF6]/5 hover:bg-[#8B5CF6]/15 transition-colors font-medium"
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100"
                         >
                           {suggestion}
                         </button>
@@ -335,14 +403,14 @@ export default function HirePage() {
               ))}
               {sendMessage.isPending && (
                 <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-[#8B5CF6] flex items-center justify-center shrink-0">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
                     <Bot className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3">
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                     <div className="flex gap-1 items-center h-4">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
                     </div>
                   </div>
                 </div>
@@ -351,17 +419,17 @@ export default function HirePage() {
             </CardContent>
 
             {/* Input */}
-            <div className="p-4 border-t">
+            <div className="border-t border-slate-200 bg-white p-4">
               {isReadyToPost ? (
                 <div className="flex gap-2">
                   <Button
                     onClick={() => setShowFinalizeDialog(true)}
-                    className="flex-1 bg-[#10B981] hover:bg-emerald-600 text-white"
+                    className="flex-1 rounded-xl bg-[#10B981] text-white hover:bg-emerald-600"
                   >
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                     Review & Post Job
                   </Button>
-                  <Button variant="outline" onClick={() => setIsReadyToPost(false)}>
+                  <Button variant="outline" onClick={() => setIsReadyToPost(false)} className="rounded-xl border-slate-200">
                     Continue Editing
                   </Button>
                 </div>
@@ -373,12 +441,12 @@ export default function HirePage() {
                     onKeyDown={handleKeyDown}
                     placeholder="Type your message or pick a suggestion above..."
                     disabled={sendMessage.isPending}
-                    className="flex-1 border-gray-200 focus-visible:ring-[#8B5CF6]"
+                    className="flex-1 rounded-xl border-slate-200 bg-slate-50 focus-visible:bg-white focus-visible:ring-primary"
                   />
                   <Button
                     onClick={() => handleSend()}
                     disabled={!input.trim() || sendMessage.isPending}
-                    className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white px-4"
+                    className="rounded-xl bg-primary px-4 text-white hover:bg-primary/90"
                   >
                     {sendMessage.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </Button>
@@ -391,7 +459,7 @@ export default function HirePage() {
 
       {/* Review & Post / Save as Draft Dialog */}
       <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-[#10B981]" />
@@ -415,17 +483,17 @@ export default function HirePage() {
               <Label htmlFor="salary" className="text-sm font-medium">Salary Range</Label>
               <Input id="salary" value={finalSalary} onChange={e => setFinalSalary(e.target.value)} className="mt-1" placeholder="e.g. $80,000 - $120,000" />
             </div>
-            <div className="rounded-lg bg-[#8B5CF6]/5 border border-[#8B5CF6]/20 p-3">
-              <p className="text-xs text-[#8B5CF6] font-medium">Posting will be distributed to all active platforms (LinkedIn, Upwork, Indeed) in mock/sandbox mode.</p>
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <p className="text-xs text-primary font-medium">Posting will be distributed to all active platforms (LinkedIn, Upwork, Indeed) in mock/sandbox mode.</p>
             </div>
           </div>
           <DialogFooter className="gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => setShowFinalizeDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowFinalizeDialog(false)} className="rounded-xl border-slate-200">Cancel</Button>
             <Button
               variant="outline"
               onClick={handleSaveAsDraft}
               disabled={!finalTitle || !finalDescription || saveAsDraft.isPending}
-              className="border-[#8B5CF6]/40 text-[#8B5CF6] hover:bg-[#8B5CF6]/5"
+              className="rounded-xl border-primary/40 text-primary hover:bg-primary/5"
             >
               {saveAsDraft.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <BookmarkCheck className="w-4 h-4 mr-2" />}
               Save as Draft
@@ -433,7 +501,7 @@ export default function HirePage() {
             <Button
               onClick={handleFinalize}
               disabled={!finalTitle || !finalDescription || finalizeRequest.isPending}
-              className="bg-[#10B981] hover:bg-emerald-600 text-white"
+              className="rounded-xl bg-[#10B981] text-white hover:bg-emerald-600"
             >
               {finalizeRequest.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
               Post Job Now

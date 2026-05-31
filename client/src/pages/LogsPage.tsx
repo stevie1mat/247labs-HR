@@ -46,16 +46,16 @@ export default function LogsPage() {
     onError: (e: Error) => toast.error(`Retry failed: ${e.message}`),
   });
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-[#8B5CF6]" /></div>;
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
   const successCount = logs?.filter((l: any) => l.status === "success").length ?? 0;
   const failedCount = logs?.filter((l: any) => l.status === "failed").length ?? 0;
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#8B5CF6] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <ScrollText className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -164,7 +164,7 @@ export default function LogsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {log.externalUrl ? (
-                        <a href={log.externalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[#8B5CF6] hover:underline text-xs">
+                        <a href={log.externalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline text-xs">
                           {log.externalJobId ?? "View"}
                           <ExternalLink className="w-3 h-3" />
                         </a>
@@ -187,7 +187,7 @@ export default function LogsPage() {
                           size="sm"
                           onClick={() => retryLog.mutate({ logId: log.id })}
                           disabled={retryLog.isPending}
-                          className="h-7 text-xs gap-1 hover:bg-[#8B5CF6]/10 hover:text-[#8B5CF6]"
+                          className="h-7 text-xs gap-1 hover:bg-primary/10 hover:text-primary"
                         >
                           <RotateCcw className="w-3 h-3" />
                           Retry

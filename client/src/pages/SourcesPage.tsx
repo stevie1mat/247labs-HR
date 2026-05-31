@@ -112,13 +112,13 @@ export default function SourcesPage() {
 
   const fields = credentialFields[form.platform] ?? credentialFields.other;
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-[#8B5CF6]" /></div>;
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#8B5CF6] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <Globe className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -126,7 +126,7 @@ export default function SourcesPage() {
             <p className="text-sm text-gray-500">Configure job board integrations and credentials</p>
           </div>
         </div>
-        <Button onClick={openCreate} className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white">
+        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-white">
           <Plus className="w-4 h-4 mr-2" />
           Add Source
         </Button>
@@ -140,7 +140,7 @@ export default function SourcesPage() {
             </div>
             <p className="font-medium text-[#1F2937]">No posting sources configured</p>
             <p className="text-sm text-gray-500">Add LinkedIn, Upwork, or Indeed to start distributing jobs</p>
-            <Button onClick={openCreate} className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white">Add First Source</Button>
+            <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-white">Add First Source</Button>
           </CardContent>
         </Card>
       ) : (
@@ -177,7 +177,7 @@ export default function SourcesPage() {
                       onCheckedChange={v => toggleSource.mutate({ id: s.id, isActive: v })}
                     />
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(s)} className="h-8 w-8 p-0 hover:bg-[#8B5CF6]/10 hover:text-[#8B5CF6]">
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(s)} className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary">
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -241,7 +241,7 @@ export default function SourcesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createSource.isPending || updateSource.isPending} className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white">
+            <Button onClick={handleSave} disabled={createSource.isPending || updateSource.isPending} className="bg-primary hover:bg-primary/90 text-white">
               {(createSource.isPending || updateSource.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {editingId ? "Save Changes" : "Add Source"}
             </Button>

@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { corsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 function simulateDelay(minMs: number, maxMs: number): Promise<void> {
   const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -73,12 +77,17 @@ serve(async (req) => {
         const success = source.isMockMode ? Math.random() > 0.1 : false;
         
         const result = {
+            postingId: posting.id,
             jobPostingId: posting.id,
+            sourceId: source.id,
             postingSourceId: source.id,
+            platform: source.platform,
             status: success ? 'success' : 'failed',
             externalJobId: success ? `${source.platform.toUpperCase()}-${Math.random().toString(36).substring(7)}` : null,
             externalUrl: success ? `https://${source.platform}.com/jobs/view/123` : null,
             errorMessage: success ? null : `[MOCK] ${source.platform} API Error`,
+            attemptCount: 1,
+            lastAttemptAt: new Date().toISOString(),
             attemptedAt: new Date().toISOString()
         };
 

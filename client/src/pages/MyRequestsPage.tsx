@@ -87,16 +87,16 @@ export default function MyRequestsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-[#8B5CF6]" />
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#8B5CF6] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <ListChecks className="w-4 h-4 text-white" />
           </div>
           <div>
@@ -104,7 +104,7 @@ export default function MyRequestsPage() {
             <p className="text-sm text-gray-500">Track all your hiring requests</p>
           </div>
         </div>
-        <Button onClick={() => setLocation("/hire")} className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white">
+        <Button onClick={() => setLocation("/hire")} className="bg-primary hover:bg-primary/90 text-white">
           <MessageSquarePlus className="w-4 h-4 mr-2" />
           New Request
         </Button>
@@ -120,7 +120,7 @@ export default function MyRequestsPage() {
               <p className="font-medium text-[#1F2937]">No requests yet</p>
               <p className="text-sm text-gray-500 mt-1">Start a new hire request to get going</p>
             </div>
-            <Button onClick={() => setLocation("/hire")} className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white">
+            <Button onClick={() => setLocation("/hire")} className="bg-primary hover:bg-primary/90 text-white">
               Start New Request
             </Button>
           </CardContent>
@@ -137,8 +137,8 @@ export default function MyRequestsPage() {
                     className="flex items-center gap-4 flex-1 cursor-pointer"
                     onClick={() => setLocation("/hire")}
                   >
-                    <div className="w-10 h-10 rounded-lg bg-[#8B5CF6]/10 flex items-center justify-center shrink-0">
-                      <MessageSquarePlus className="w-5 h-5 text-[#8B5CF6]" />
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <MessageSquarePlus className="w-5 h-5 text-primary" />
                     </div>
                     <div>
                       <p className="font-semibold text-[#1F2937] text-sm">{req.title || "Untitled Request"}</p>
@@ -170,7 +170,7 @@ export default function MyRequestsPage() {
                             key={opt.value}
                             disabled={req.status === opt.value || updateStatusMutation.isPending}
                             onClick={() => updateStatusMutation.mutate({ id: req.id, status: opt.value })}
-                            className={req.status === opt.value ? "font-semibold text-[#8B5CF6]" : ""}
+                            className={req.status === opt.value ? "font-semibold text-primary" : ""}
                           >
                             <RefreshCw className="w-3.5 h-3.5 mr-2 opacity-60" />
                             {opt.label}
