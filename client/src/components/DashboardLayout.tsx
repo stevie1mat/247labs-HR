@@ -48,8 +48,6 @@ import { FloatingHRIcons } from "./FloatingHRIcons";
 const hiringManagerItems = [
   { icon: FileText, label: "Job Templates", path: "/templates" },
   { icon: Briefcase, label: "My Job Postings", path: "/my-postings" },
-  { icon: MessageSquarePlus, label: "New Hire Request", path: "/hire" },
-  { icon: ListChecks, label: "My Requests", path: "/my-requests" },
 ];
 
 const hrAdminItems = [

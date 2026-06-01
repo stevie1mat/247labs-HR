@@ -26,6 +26,12 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
     
+    // Admin client to bypass RLS for system logs
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    
     const jwt = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(jwt);
     if (authError || !user) {
@@ -218,7 +224,6 @@ serve(async (req) => {
             postingId: posting.id,
             jobPostingId: posting.id,
             sourceId: source.id,
-            postingSourceId: source.id,
             platform: source.platform,
             status: success ? 'success' : 'failed',
             externalJobId,
@@ -230,7 +235,10 @@ serve(async (req) => {
         };
 
         results.push(result);
-        await supabaseClient.from('jobPostingLogs').insert(result);
+        const { error: logError } = await supabaseAdmin.from('jobPostingLogs').insert(result);
+        if (logError) {
+            throw new Error(`Failed to save log to database: ${JSON.stringify(logError)}`);
+        }
     }
 
     return new Response(JSON.stringify({ posting, logs: results }), {

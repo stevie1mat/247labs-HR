@@ -41,8 +41,7 @@ import { toast } from "sonner";
 export default function MyPostingsPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
-  const [confirmFulfill, setConfirmFulfill] = useState<number | null>(null);
-  const [confirmReopen, setConfirmReopen] = useState<number | null>(null);
+  const [confirmManage, setConfirmManage] = useState<{id: number, action: 'fulfill' | 'close' | 'delete'} | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -56,34 +55,41 @@ export default function MyPostingsPage() {
     }
   });
 
-  const markFulfilledMutation = useMutation({
-    mutationFn: async ({ id }: { id: number }) => {
-        const { error } = await supabase.from('jobPostings').update({
-            status: 'fulfilled',
-            fulfilledAt: new Date().toISOString()
-        }).eq('id', id);
-        if (error) throw error;
+  const managePostingMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number, action: 'fulfill' | 'close' | 'delete' }) => {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-posting`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${session?.access_token || ''}`,
+            },
+            body: JSON.stringify({ postingId: id, action })
+        });
+        if (!res.ok) {
+            let errMessage = "Failed to update posting";
+            try {
+                const err = await res.json();
+                errMessage = err.error || errMessage;
+            } catch {}
+            throw new Error(errMessage);
+        }
+        return await res.json();
     },
-    onSuccess: () => {
-      toast.success("Job marked as fulfilled");
+    onSuccess: (data, variables) => {
+      if (data?.debug?.wpErrors?.length > 0) {
+          toast.error(`WordPress failed to delete: ${data.debug.wpErrors[0]}`);
+      } else if (data?.debug?.logsFound === 0) {
+          toast.warning("Deleted locally, but NO WordPress log was found in database!");
+      } else if (variables.action === 'delete') {
+          toast.success("Job posting deleted");
+      }
+      else if (variables.action === 'close') toast.success("Job posting closed");
+      else toast.success("Job marked as fulfilled");
+      
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
-      setConfirmFulfill(null);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const reopenMutation = useMutation({
-    mutationFn: async ({ id }: { id: number }) => {
-        const { error } = await supabase.from('jobPostings').update({
-            status: 'open',
-            fulfilledAt: null
-        }).eq('id', id);
-        if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Job reopened");
-      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
-      setConfirmReopen(null);
+      setConfirmManage(null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -192,8 +198,8 @@ export default function MyPostingsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{posting.title}</h3>
-                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                          {posting.status === "open" ? <Circle className="w-3 h-3 mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                          {posting.status === "open" ? <Circle className="w-3 h-3 mr-1" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
                           {posting.status === "open" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status}
                         </Badge>
                       </div>
@@ -239,18 +245,24 @@ export default function MyPostingsPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem
-                          onClick={() => setConfirmFulfill(posting.id)}
+                          onClick={() => setConfirmManage({ id: posting.id, action: 'fulfill' })}
                           className="text-emerald-700 focus:text-emerald-700 cursor-pointer"
                         >
                           <CheckCircle2 className="w-4 h-4 mr-2" />
                           Mark as Fulfilled
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-amber-700 focus:text-amber-700 cursor-pointer">
+                        <DropdownMenuItem 
+                          onClick={() => setConfirmManage({ id: posting.id, action: 'close' })}
+                          className="text-amber-700 focus:text-amber-700 cursor-pointer"
+                        >
                           <XCircle className="w-4 h-4 mr-2" />
                           Close Posting
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-rose-600 focus:text-rose-600 cursor-pointer">
+                        <DropdownMenuItem 
+                          onClick={() => setConfirmManage({ id: posting.id, action: 'delete' })}
+                          className="text-rose-600 focus:text-rose-600 cursor-pointer"
+                        >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete Posting
                         </DropdownMenuItem>
@@ -268,47 +280,33 @@ export default function MyPostingsPage() {
         </div>
       )}
 
-      {/* Mark Fulfilled confirmation */}
-      <AlertDialog open={confirmFulfill !== null} onOpenChange={(open) => !open && setConfirmFulfill(null)}>
+      <AlertDialog open={confirmManage !== null} onOpenChange={(open) => !open && setConfirmManage(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark as Fulfilled?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmManage?.action === 'delete' ? "Delete Posting?" : 
+               confirmManage?.action === 'close' ? "Close Posting?" : "Mark as Fulfilled?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will mark the position as filled. You can reopen it later if needed.
+              {confirmManage?.action === 'delete' 
+                ? "This will permanently delete the posting from the database and remove it entirely from WordPress. This action cannot be undone." 
+                : "This will update the posting's status locally and switch the live WordPress post to a draft to hide it from the public."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              onClick={() => confirmFulfill !== null && markFulfilledMutation.mutate({ id: confirmFulfill })}
-              disabled={markFulfilledMutation.isPending}
+              className={
+                confirmManage?.action === 'delete' ? "bg-rose-600 hover:bg-rose-700 text-white" :
+                confirmManage?.action === 'close' ? "bg-amber-600 hover:bg-amber-700 text-white" :
+                "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }
+              onClick={() => confirmManage !== null && managePostingMutation.mutate(confirmManage)}
+              disabled={managePostingMutation.isPending}
             >
-              {markFulfilledMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Mark Fulfilled
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Reopen confirmation */}
-      <AlertDialog open={confirmReopen !== null} onOpenChange={(open) => !open && setConfirmReopen(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reopen this posting?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will set the posting status back to Open and clear the fulfilled date.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-primary hover:bg-primary/90 text-white"
-              onClick={() => confirmReopen !== null && reopenMutation.mutate({ id: confirmReopen })}
-              disabled={reopenMutation.isPending}
-            >
-              {reopenMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Reopen
+              {managePostingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {confirmManage?.action === 'delete' ? "Delete" : 
+               confirmManage?.action === 'close' ? "Close" : "Mark Fulfilled"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

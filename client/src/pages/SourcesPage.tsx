@@ -103,32 +103,32 @@ export default function SourcesPage() {
   const { data: sources, isLoading, refetch } = useQuery({
     queryKey: ['postingSources'],
     queryFn: async () => {
-        const { data, error } = await supabase.from('postingSources').select('*').order('id', { ascending: true });
-        if (error) throw error;
-        return data;
+      const { data, error } = await supabase.from('postingSources').select('*').order('id', { ascending: true });
+      if (error) throw error;
+      return data;
     }
   });
 
   const createSource = useMutation({
     mutationFn: async (form: any) => {
-        const { error } = await supabase.from('postingSources').insert([form]);
-        if (error) throw error;
+      const { error } = await supabase.from('postingSources').insert([form]);
+      if (error) throw error;
     },
     onSuccess: () => { refetch(); toast.success("Source added!"); setShowDialog(false); }
   });
 
   const updateSource = useMutation({
     mutationFn: async ({ id, ...form }: any) => {
-        const { error } = await supabase.from('postingSources').update(form).eq('id', id);
-        if (error) throw error;
+      const { error } = await supabase.from('postingSources').update(form).eq('id', id);
+      if (error) throw error;
     },
     onSuccess: () => { refetch(); toast.success("Source updated!"); setShowDialog(false); }
   });
 
   const toggleSource = useMutation({
     mutationFn: async ({ id, isActive }: { id: number, isActive: boolean }) => {
-        const { error } = await supabase.from('postingSources').update({ isActive }).eq('id', id);
-        if (error) throw error;
+      const { error } = await supabase.from('postingSources').update({ isActive }).eq('id', id);
+      if (error) throw error;
     },
     onSuccess: () => { refetch(); }
   });
@@ -306,102 +306,112 @@ export default function SourcesPage() {
             const isLinked = Boolean(linkedSource);
 
             return (
-            <Card key={platform} className="rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
-              <CardContent className="flex h-full flex-col p-5">
-                <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 flex items-center justify-center shrink-0 overflow-hidden">
-                    {platformIcons[platform] ? (
-                      <img
-                        src={platformIcons[platform]}
-                        alt={`${platformLabels[platform]} logo`}
-                        className="h-12 w-12 object-contain"
-                      />
-                    ) : (
-                      <span className="text-xl">
-                        {platform === "upwork" ? "🟢" : platform === "indeed" ? "🔴" : "⚫"}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{platformLabels[platform]}</h3>
-                        <p className="mt-3 text-sm leading-6 text-slate-500">
-                          {platformDescriptions[platform]}
-                        </p>
-                      </div>
-                      {isLinked ? (
-                        <Badge className="rounded-lg border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          Linked
-                        </Badge>
+              <Card key={platform} className="rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+                <CardContent className="flex h-full flex-col p-5">
+                  <div className="flex items-start gap-4">
+                    <div className="w-16 h-16 flex items-center justify-center shrink-0 overflow-hidden">
+                      {platformIcons[platform] ? (
+                        <img
+                          src={platformIcons[platform]}
+                          alt={`${platformLabels[platform]} logo`}
+                          className="h-12 w-12 object-contain"
+                        />
                       ) : (
-                        <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs text-slate-500">
-                          Not linked
-                        </Badge>
+                        <span className="text-xl">
+                          {platform === "upwork" ? "🟢" : platform === "indeed" ? "🔴" : "⚫"}
+                        </span>
                       )}
                     </div>
-                    {isLinked && (
-                      <div className="mt-4 flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs">{linkedSource.name}</Badge>
-                        {linkedSource.isMockMode && (
-                        <Badge className="rounded-lg bg-amber-50 text-amber-700 border-amber-200 text-xs">
-                          <FlaskConical className="w-3 h-3 mr-1" />
-                          Mock Mode
-                        </Badge>
-                      )}
-                        {!linkedSource.isActive && <Badge className="rounded-lg bg-gray-100 text-gray-500 border-gray-200 text-xs">Inactive</Badge>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{platformLabels[platform]}</h3>
+                          <p className="mt-3 text-sm leading-6 text-slate-500">
+                            {platformDescriptions[platform]}
+                          </p>
+                        </div>
+                        {isLinked ? (
+                          <Badge className="rounded-lg border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            Linked
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs text-slate-500">
+                            Not linked
+                          </Badge>
+                        )}
                       </div>
+                      {isLinked && (
+                        <div className="mt-4 flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 text-xs">{linkedSource.name}</Badge>
+                          {linkedSource.isMockMode && (
+                            <Badge className="rounded-lg bg-amber-50 text-amber-700 border-amber-200 text-xs">
+                              <FlaskConical className="w-3 h-3 mr-1" />
+                              Mock Mode
+                            </Badge>
+                          )}
+                          {!linkedSource.isActive && <Badge className="rounded-lg bg-gray-100 text-gray-500 border-gray-200 text-xs">Inactive</Badge>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {platform === 'indeed' && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                      <p className="text-xs text-blue-800 mb-1 font-medium">Your Live XML Feed URL:</p>
+                      <a href="https://xbfhtdgqiioignjgrsjy.supabase.co/functions/v1/indeed-feed" target="_blank" rel="noreferrer" className="text-[12px] font-medium text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center">
+                        Click here
+                        <Link2 className="w-3 h-3 ml-1" />
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex-1" />
+
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                    {isLinked ? (
+                      <>
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                          <span className="text-xs font-medium text-slate-500">{linkedSource.isActive ? "Active" : "Inactive"}</span>
+                          <Switch
+                            checked={linkedSource.isActive}
+                            onCheckedChange={v => toggleSource.mutate({ id: linkedSource.id, isActive: v })}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEdit(linkedSource)}
+                            className="h-9 rounded-md border-primary/20 px-3 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
+                          >
+                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            Manage
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <Button
+                        onClick={() => openCreateForPlatform(platform)}
+                        className="h-9 rounded-md bg-primary px-4 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
+                      >
+                        <Link2 className="mr-1 h-3.5 w-3.5" />
+                        Link it
+                      </Button>
                     )}
                   </div>
-                </div>
-
-                <div className="mt-5 flex-1" />
-
-                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
-                  {isLinked ? (
-                    <>
-                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                        <span className="text-xs font-medium text-slate-500">{linkedSource.isActive ? "Active" : "Inactive"}</span>
-                        <Switch
-                          checked={linkedSource.isActive}
-                          onCheckedChange={v => toggleSource.mutate({ id: linkedSource.id, isActive: v })}
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEdit(linkedSource)}
-                          className="h-9 rounded-md border-primary/20 px-3 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
-                        >
-                          <Pencil className="mr-1 h-3.5 w-3.5" />
-                          Manage
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <Button
-                      onClick={() => openCreateForPlatform(platform)}
-                      className="h-9 rounded-md bg-primary px-4 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
-                    >
-                      <Link2 className="mr-1 h-3.5 w-3.5" />
-                      Link it
-                    </Button>
+                  {isLinked && (
+                    <p className="mt-3 text-sm leading-6 text-slate-500">
+                      {linkedSource.isMockMode ? "Sandbox mode — no real API calls" : "Live mode — real API credentials active"}
+                    </p>
                   )}
-                </div>
-                {isLinked && (
-                  <p className="mt-3 text-sm leading-6 text-slate-500">
-                    {linkedSource.isMockMode ? "Sandbox mode — no real API calls" : "Live mode — real API credentials active"}
-                  </p>
-                )}
-                {!isLinked && (
-                  <p className="mt-3 text-sm leading-6 text-slate-500">
-                    No credentials connected yet. Link this platform to include it in job distribution.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+                  {!isLinked && (
+                    <p className="mt-3 text-sm leading-6 text-slate-500">
+                      No credentials connected yet. Link this platform to include it in job distribution.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             );
           })}
         </div>
@@ -425,15 +435,15 @@ export default function SourcesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-              <SelectItem value="linkedin">LinkedIn</SelectItem>
-              <SelectItem value="wordpress">WordPress</SelectItem>
-              <SelectItem value="upwork">Upwork</SelectItem>
-              <SelectItem value="indeed">Indeed</SelectItem>
-              <SelectItem value="dubizzle_jobs_uae">Dubizzle Jobs (UAE) — AI Agent</SelectItem>
-              <SelectItem value="wellfound">Wellfound — AI Agent</SelectItem>
-              <SelectItem value="remotive">Remotive — AI Agent</SelectItem>
-            </SelectContent>
-          </Select>
+                    <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    <SelectItem value="wordpress">WordPress</SelectItem>
+                    <SelectItem value="upwork">Upwork</SelectItem>
+                    <SelectItem value="indeed">Indeed</SelectItem>
+                    <SelectItem value="dubizzle_jobs_uae">Dubizzle Jobs (UAE) — AI Agent</SelectItem>
+                    <SelectItem value="wellfound">Wellfound — AI Agent</SelectItem>
+                    <SelectItem value="remotive">Remotive — AI Agent</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div className="flex items-center gap-2">
