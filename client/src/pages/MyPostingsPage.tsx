@@ -4,6 +4,14 @@ import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +32,7 @@ import {
 import {
   Loader2, Briefcase, MessageSquarePlus, Clock,
   CheckCircle2, Circle, MoreVertical, RefreshCw,
+  Users, XCircle, Trash2, Search, List, LayoutGrid
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { formatDistanceToNow, format } from "date-fns";
@@ -34,6 +43,9 @@ export default function MyPostingsPage() {
   const [, setLocation] = useLocation();
   const [confirmFulfill, setConfirmFulfill] = useState<number | null>(null);
   const [confirmReopen, setConfirmReopen] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const { data: postings, isLoading } = useQuery({
     queryKey: ['jobPostings'],
@@ -84,17 +96,64 @@ export default function MyPostingsPage() {
     );
   }
 
+  const filteredPostings = (postings ?? []).filter((posting: any) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query || [
+      posting.title,
+      posting.description,
+      posting.salaryRange,
+    ].some(value => typeof value === "string" && value.toLowerCase().includes(query));
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      posting.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-[#1F2937]">My Job Postings</h1>
-            <p className="text-sm text-gray-500">All jobs you've posted across platforms</p>
-          </div>
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search postings by title or keywords..."
+            className="h-12 rounded-xl border-slate-200 bg-white pl-11 shadow-[0_12px_28px_rgba(15,23,42,0.04)]"
+          />
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="!h-12 min-w-[170px] rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+              <SelectValue placeholder="All status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="fulfilled">Fulfilled</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setViewMode(prev => prev === "grid" ? "list" : "grid")}
+            className="h-12 min-w-[132px] rounded-md border-slate-200 bg-white px-4 text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:bg-slate-50"
+          >
+            {viewMode === "grid" ? (
+              <>
+                <List className="mr-2 h-4 w-4" />
+                List view
+              </>
+            ) : (
+              <>
+                <LayoutGrid className="mr-2 h-4 w-4" />
+                Grid view
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -110,11 +169,21 @@ export default function MyPostingsPage() {
             </div>
           </CardContent>
         </Card>
+      ) : filteredPostings.length === 0 ? (
+        <Card className="rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+          <CardContent className="flex flex-col items-center gap-4 pb-12 pt-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
+              <Search className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="font-medium text-[#1F2937]">No matching postings</p>
+            <p className="text-sm text-gray-500">Try a different search or filter.</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {postings.map((posting: any) => (
+        <div className={viewMode === "grid" ? "grid gap-4 md:grid-cols-2 2xl:grid-cols-3" : "grid gap-3"}>
+          {filteredPostings.map((posting: any) => (
             <Card key={posting.id} className="h-full rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
-              <CardContent className="flex h-full flex-col p-5">
+              <CardContent className={viewMode === "grid" ? "flex h-full flex-col p-5" : "p-5"}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
@@ -123,24 +192,32 @@ export default function MyPostingsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{posting.title}</h3>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge className={`rounded-lg text-xs ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                          {posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Circle className="w-3 h-3 mr-1" />}
+                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                          {posting.status === "open" ? <Circle className="w-3 h-3 mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
                           {posting.status === "open" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status}
                         </Badge>
                       </div>
+                      
                       {posting.salaryRange && (
-                        <p className="text-xs text-slate-500 mt-2">{posting.salaryRange}</p>
+                        <p className="text-sm font-medium text-slate-500 mt-1">{posting.salaryRange}</p>
                       )}
-                      <div className="mt-3 flex items-center gap-4 text-xs font-medium text-slate-400">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
+
+                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                        <span>Active on:</span>
+                        <Badge variant="outline" className="rounded-full px-2.5 py-0.5 border-slate-200 bg-slate-50 text-slate-700 font-medium text-xs">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453" alt="WordPress" className="w-3.5 h-3.5 mr-1.5" />
+                          WordPress
+                        </Badge>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-4 text-sm text-slate-400">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" />
                           Posted {posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "recently"}
                         </span>
                         {posting.fulfilledAt && (
-                          <span className="flex items-center gap-1 text-emerald-600">
-                            <CheckCircle2 className="w-3 h-3" />
+                          <span className="flex items-center gap-1.5 text-emerald-600">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
                             Fulfilled {format(new Date(posting.fulfilledAt), "MMM d, yyyy")}
                           </span>
                         )}
@@ -149,32 +226,37 @@ export default function MyPostingsPage() {
                   </div>
 
                   {/* Actions dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600 shrink-0">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      {posting.status === "open" ? (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-8 text-slate-500 hover:text-slate-700">
+                      <Users className="w-4 h-4 mr-1.5" />
+                      Applicants
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-600">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem
                           onClick={() => setConfirmFulfill(posting.id)}
-                          className="text-emerald-700 focus:text-emerald-700"
+                          className="text-emerald-700 focus:text-emerald-700 cursor-pointer"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5 mr-2" />
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
                           Mark as Fulfilled
                         </DropdownMenuItem>
-                      ) : posting.status === "fulfilled" ? (
-                        <DropdownMenuItem
-                          onClick={() => setConfirmReopen(posting.id)}
-                          className="text-blue-700 focus:text-blue-700"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5 mr-2" />
-                          Reopen Posting
+                        <DropdownMenuItem className="text-amber-700 focus:text-amber-700 cursor-pointer">
+                          <XCircle className="w-4 h-4 mr-2" />
+                          Close Posting
                         </DropdownMenuItem>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-rose-600 focus:text-rose-600 cursor-pointer">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Posting
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
 
                 {posting.description && (
