@@ -88,6 +88,18 @@ const credentialFields: Record<string, { key: string; label: string; placeholder
     { key: "applicationPassword", label: "Application Password", placeholder: "WordPress application password" },
     { key: "postType", label: "Post Type", placeholder: "career" },
   ],
+  wellfound: [
+    { key: "username", label: "Email / Username", placeholder: "your_wellfound_email" },
+    { key: "password", label: "Password", placeholder: "your_wellfound_password" },
+  ],
+  remotive: [
+    { key: "username", label: "Email / Username", placeholder: "your_remotive_email" },
+    { key: "password", label: "Password", placeholder: "your_remotive_password" },
+  ],
+  dubizzle_jobs_uae: [
+    { key: "username", label: "Email / Username", placeholder: "your_dubizzle_email" },
+    { key: "password", label: "Password", placeholder: "your_dubizzle_password" },
+  ],
   other: [
     { key: "apiKey", label: "API Key", placeholder: "API Key" },
     { key: "apiUrl", label: "API URL", placeholder: "https://api.example.com" },
@@ -357,12 +369,8 @@ export default function SourcesPage() {
                   </div>
 
                   {platform === 'indeed' && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                      <p className="text-xs text-blue-800 mb-1 font-medium">Your Live XML Feed URL:</p>
-                      <a href="https://xbfhtdgqiioignjgrsjy.supabase.co/functions/v1/indeed-feed" target="_blank" rel="noreferrer" className="text-[12px] font-medium text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center">
-                        Click here
-                        <Link2 className="w-3 h-3 ml-1" />
-                      </a>
+                    <div className="">
+
                     </div>
                   )}
 

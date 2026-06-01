@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   Eye,
   FileText,
+  Link2,
   LayoutGrid,
   Loader2,
   List,
@@ -81,6 +82,7 @@ export default function TemplatesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewingTemplate, setViewingTemplate] = useState<any | null>(null);
   const [postingTemplateId, setPostingTemplateId] = useState<number | null>(null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<number[]>([]);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateStep, setGenerateStep] = useState<1 | 2 | 3>(1);
   const [positionInput, setPositionInput] = useState("");
@@ -147,7 +149,7 @@ export default function TemplatesPage() {
   });
 
   const postFromTemplate = useMutation({
-    mutationFn: async ({ templateId }: { templateId: number }) => {
+    mutationFn: async ({ templateId, sourceIds }: { templateId: number; sourceIds?: number[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
         method: "POST",
@@ -156,7 +158,7 @@ export default function TemplatesPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ templateId }),
+        body: JSON.stringify({ templateId, sourceIds }),
       });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -166,6 +168,7 @@ export default function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ["jobPostings"] });
       queryClient.invalidateQueries({ queryKey: ["jobRequests"] });
       setPostingTemplateId(null);
+      setSelectedSourceIds([]);
       setLocation("/my-postings");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -265,6 +268,19 @@ export default function TemplatesPage() {
       isActive: template.isActive,
     });
     setShowDialog(true);
+  };
+
+  const openPostDialog = (templateId: number) => {
+    setPostingTemplateId(templateId);
+    setSelectedSourceIds((sources ?? []).map((source: any) => source.id));
+  };
+
+  const toggleSelectedSource = (sourceId: number) => {
+    setSelectedSourceIds(prev => (
+      prev.includes(sourceId)
+        ? prev.filter(id => id !== sourceId)
+        : [...prev, sourceId]
+    ));
   };
 
   const resetGenerateDialog = () => {
@@ -477,7 +493,7 @@ export default function TemplatesPage() {
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
-                          onClick={() => setPostingTemplateId(template.id)}
+                      onClick={() => openPostDialog(template.id)}
                           disabled={!template.isActive || postFromTemplate.isPending}
                           className="h-9 flex-1 rounded-md bg-primary px-3 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
                         >
@@ -550,7 +566,7 @@ export default function TemplatesPage() {
                     <div className="flex shrink-0 items-center gap-2">
                       <Button
                         size="sm"
-                        onClick={() => setPostingTemplateId(template.id)}
+                        onClick={() => openPostDialog(template.id)}
                         disabled={!template.isActive || postFromTemplate.isPending}
                         className="h-9 rounded-md bg-primary px-3 text-xs text-white shadow-[0_10px_20px_rgba(120,19,124,0.16)] hover:bg-primary/90"
                       >
@@ -593,7 +609,12 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      <AlertDialog open={postingTemplateId !== null} onOpenChange={(open) => !open && !postFromTemplate.isPending && setPostingTemplateId(null)}>
+      <AlertDialog open={postingTemplateId !== null} onOpenChange={(open) => {
+        if (!open && !postFromTemplate.isPending) {
+          setPostingTemplateId(null);
+          setSelectedSourceIds([]);
+        }
+      }}>
         <AlertDialogContent>
           {postFromTemplate.isPending ? (
             <div className="flex flex-col items-center justify-center py-10">
@@ -611,11 +632,19 @@ export default function TemplatesPage() {
                 <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="mt-2 text-slate-500">
-                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the following active platforms:
+                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the selected active platforms:
                     {sources && sources.length > 0 ? (
                       <div className="mt-3 flex flex-col gap-2">
                         {sources.map((s: any) => (
-                          <div key={s.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => toggleSelectedSource(s.id)}
+                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${selectedSourceIds.includes(s.id) ? "border-primary/30 bg-primary/5" : "border-slate-200 bg-slate-50"}`}
+                          >
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selectedSourceIds.includes(s.id) ? "border-primary bg-primary text-white" : "border-slate-300 bg-white"}`}>
+                              {selectedSourceIds.includes(s.id) ? <Check className="h-3.5 w-3.5" /> : null}
+                            </div>
                             {platformIcons[s.platform] ? (
                               <img src={platformIcons[s.platform]} alt={s.platform} className="h-5 w-5 shrink-0 object-contain" />
                             ) : (
@@ -623,7 +652,7 @@ export default function TemplatesPage() {
                             )}
                             <span className="text-sm font-medium text-slate-700">{s.name || s.platform}</span>
                             {s.isMockMode && <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">Mock Mode</Badge>}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     ) : (
@@ -641,12 +670,12 @@ export default function TemplatesPage() {
                   onClick={(e) => {
                     e.preventDefault();
                     if (postingTemplateId !== null) {
-                      postFromTemplate.mutate({ templateId: postingTemplateId });
+                      postFromTemplate.mutate({ templateId: postingTemplateId, sourceIds: selectedSourceIds });
                     }
                   }}
-                  disabled={postFromTemplate.isPending || !sources || sources.length === 0}
+                  disabled={postFromTemplate.isPending || !sources || sources.length === 0 || selectedSourceIds.length === 0}
                 >
-                  <Send className="mr-2 h-4 w-4" />
+                  <Link2 className="mr-2 h-4 w-4" />
                   Post Job
                 </AlertDialogAction>
               </AlertDialogFooter>

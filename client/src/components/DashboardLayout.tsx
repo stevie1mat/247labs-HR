@@ -35,6 +35,7 @@ import {
   Search,
   ScrollText,
   Zap,
+  Users,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -48,6 +49,7 @@ import { FloatingHRIcons } from "./FloatingHRIcons";
 const hiringManagerItems = [
   { icon: FileText, label: "Job Templates", path: "/templates" },
   { icon: Briefcase, label: "My Job Postings", path: "/my-postings" },
+  { icon: Users, label: "Applicants", path: "/applicants" },
 ];
 
 const hrAdminItems = [

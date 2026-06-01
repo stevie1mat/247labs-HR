@@ -11,13 +11,67 @@ function simulateDelay(minMs: number, maxMs: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, delay));
 }
 
+function getAutomationConfig() {
+  return {
+    url: (Deno.env.get("AUTOMATION_SERVER_URL") ?? "").replace(/\/$/, ""),
+    apiKey: Deno.env.get("AUTOMATION_API_KEY") ?? "",
+  };
+}
+
+async function callAutomationAgent(source: any, posting: any) {
+  const { url, apiKey } = getAutomationConfig();
+
+  if (!url) {
+    throw new Error("AUTOMATION_SERVER_URL is missing");
+  }
+
+  if (!apiKey) {
+    throw new Error("AUTOMATION_API_KEY is missing");
+  }
+
+  const response = await fetch(`${url}/post-job`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      platform: source.platform,
+      posting_id: posting.id,
+      credentials: source.credentials || {},
+    }),
+  });
+
+  const raw = await response.text();
+  let data: any = {};
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { error: raw };
+  }
+
+  if (!response.ok) {
+    throw new Error(data.detail || data.error || raw || `Automation request failed with ${response.status}`);
+  }
+
+  if (!data.success) {
+    throw new Error(data.error || data.verification_reason || "Automation agent reported failure");
+  }
+
+  return {
+    externalUrl: data.posted_url ?? null,
+    externalJobId: data.posted_url ? `${source.platform.toUpperCase()}-AI` : null,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { templateId, postingId } = await req.json();
+    const { templateId, postingId, sourceIds } = await req.json();
 
     const authHeader = req.headers.get('Authorization') || '';
     const supabaseClient = createClient(
@@ -78,8 +132,12 @@ serve(async (req) => {
         .select('*')
         .eq('isActive', true);
 
+    const filteredSources = Array.isArray(sourceIds) && sourceIds.length > 0
+      ? (sources || []).filter((source: any) => sourceIds.includes(source.id))
+      : (sources || []);
+
     const results = [];
-    for (const source of sources || []) {
+    for (const source of filteredSources) {
         let success = false;
         let externalUrl = null;
         let errorMessage = null;
@@ -214,6 +272,16 @@ serve(async (req) => {
             } catch (err: any) {
                 success = false;
                 errorMessage = err.message || "Unknown error connecting to WordPress";
+            }
+        } else if (source.platform === 'wellfound') {
+            try {
+                const automationResult = await callAutomationAgent(source, posting);
+                success = true;
+                externalJobId = automationResult.externalJobId;
+                externalUrl = automationResult.externalUrl;
+            } catch (err: any) {
+                success = false;
+                errorMessage = err.message || "Unknown error connecting to Wellfound";
             }
         } else {
             success = false;
