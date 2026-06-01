@@ -96,49 +96,44 @@ export default function MyPostingsPage() {
             <p className="text-sm text-gray-500">All jobs you've posted across platforms</p>
           </div>
         </div>
-        <Button onClick={() => setLocation("/hire")} className="bg-primary hover:bg-primary/90 text-white">
-          <MessageSquarePlus className="w-4 h-4 mr-2" />
-          New Hire Request
-        </Button>
       </div>
 
       {!postings || postings.length === 0 ? (
-        <Card className="border-0 shadow-sm bg-white">
+        <Card className="rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
           <CardContent className="pt-12 pb-12 flex flex-col items-center gap-4 text-center">
-            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
               <Briefcase className="w-6 h-6 text-gray-400" />
             </div>
             <div>
               <p className="font-medium text-[#1F2937]">No job postings yet</p>
               <p className="text-sm text-gray-500 mt-1">Complete a hire request to create your first posting</p>
             </div>
-            <Button onClick={() => setLocation("/hire")} className="bg-primary hover:bg-primary/90 text-white">
-              Start New Request
-            </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {postings.map((posting: any) => (
-            <Card key={posting.id} className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow">
-              <CardContent className="p-5">
+            <Card key={posting.id} className="h-full rounded-xl border border-slate-200 bg-white py-0 shadow-[0_16px_40px_rgba(15,23,42,0.08)] transition-shadow hover:shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+              <CardContent className="flex h-full flex-col p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                       <Briefcase className="w-5 h-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-[#1F2937]">{posting.title}</h3>
-                        <Badge className={`text-xs border ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{posting.title}</h3>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge className={`rounded-lg text-xs ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
                           {posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Circle className="w-3 h-3 mr-1" />}
                           {posting.status === "open" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status}
                         </Badge>
                       </div>
                       {posting.salaryRange && (
-                        <p className="text-xs text-gray-500 mt-1">{posting.salaryRange}</p>
+                        <p className="text-xs text-slate-500 mt-2">{posting.salaryRange}</p>
                       )}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                      <div className="mt-3 flex items-center gap-4 text-xs font-medium text-slate-400">
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           Posted {posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "recently"}
@@ -183,7 +178,7 @@ export default function MyPostingsPage() {
                 </div>
 
                 {posting.description && (
-                  <p className="text-sm text-gray-600 mt-3 line-clamp-2 ml-14">{posting.description}</p>
+                  <p className="mt-4 line-clamp-4 min-h-[6rem] text-sm leading-6 text-slate-500">{posting.description}</p>
                 )}
               </CardContent>
             </Card>

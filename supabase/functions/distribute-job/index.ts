@@ -103,12 +103,77 @@ serve(async (req) => {
                 const apiUrl = `${siteUrl}/wp-json/wp/v2/${postType}`;
                 const auth = btoa(`${username}:${password}`);
 
-                const payload = {
+                // 1. Fetch image from Pexels if API key is present
+                let mediaId = null;
+                const pexelsKey = Deno.env.get('PEXELS_API_KEY');
+                
+                if (pexelsKey) {
+                    try {
+                        // Use the exact job title for highly relevant images
+                        const pexelsQuery = encodeURIComponent(posting.title);
+                        const pexelsRes = await fetch(`https://api.pexels.com/v1/search?query=${pexelsQuery}&per_page=1&orientation=landscape`, {
+                            headers: { Authorization: pexelsKey }
+                        });
+                        if (pexelsRes.ok) {
+                            const pexelsData = await pexelsRes.json();
+                            const imageUrl = pexelsData.photos?.[0]?.src?.large2x;
+                            
+                            if (imageUrl) {
+                                // 2. Download the image binary
+                                const imgRes = await fetch(imageUrl);
+                                if (imgRes.ok) {
+                                    const imgBuffer = await imgRes.arrayBuffer();
+                                    
+                                    // 3. Upload to WordPress Media Library
+                                    const uploadRes = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
+                                        method: "POST",
+                                        headers: {
+                                            "Authorization": `Basic ${auth}`,
+                                            "Content-Disposition": `attachment; filename="job-featured-image-${Date.now()}.jpg"`,
+                                            "Content-Type": imgRes.headers.get('content-type') || 'image/jpeg'
+                                        },
+                                        body: imgBuffer
+                                    });
+                                    
+                                    if (uploadRes.ok) {
+                                        const uploadData = await uploadRes.json();
+                                        mediaId = uploadData.id;
+                                    } else {
+                                        console.error("WP Media Upload failed", await uploadRes.text());
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Pexels/Media flow failed:", e);
+                    }
+                }
+
+                let companyText = posting.description || "";
+                let roleText = "";
+                const markers = ["Role Overview:", "Position Overview:", "Job Overview:"];
+                for (const marker of markers) {
+                    if (companyText.includes(marker)) {
+                        const parts = companyText.split(marker);
+                        companyText = parts[0].trim();
+                        roleText = parts[1].trim();
+                        break;
+                    }
+                }
+                
+                // Fallback if no explicit marker was found
+                if (!roleText) {
+                    roleText = companyText;
+                    companyText = "247 Labs Inc. is a leading custom software development company based in Toronto, Canada, specializing in web and mobile app development, AI/ML, UI/UX design, and scalable technology solutions.";
+                }
+
+                const payload: any = {
                     title: posting.title,
                     status: "publish",
+                    content: roleText,
                     acf: {
                         location: "Remote",
-                        company_overview: posting.description || "",
+                        company_overview: companyText,
                         key_responsibilities: posting.requirements || "",
                         desirable_skills: "",
                         qualifications: "",
@@ -116,6 +181,10 @@ serve(async (req) => {
                         join_our_team: "Apply now!"
                     }
                 };
+
+                if (mediaId) {
+                    payload.featured_media = mediaId;
+                }
 
                 const res = await fetch(apiUrl, {
                     method: "POST",
