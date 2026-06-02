@@ -1748,7 +1748,7 @@
             message: "LinkedIn: paid promotion step detected, but Not now was not visible.",
             status: "LinkedIn paused on promotion step.",
           });
-          window.alert("LinkedIn is on the paid promotion step, but Not now was not visible. Choose Not now manually, then rerun the extension.");
+          chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
           return;
         }
 
@@ -1756,12 +1756,10 @@
       }
 
       if (isLinkedInDescriptionReviewCard(jobData)) {
-        showControlBar("LinkedIn", "Replacing description", "Opening the review card and pasting our template");
-        const replacedDescription = await fillLinkedInDescriptionEditor(jobData);
-        if (replacedDescription) {
-          await continueLinkedInDescriptionStep();
-          continue;
-        }
+        showControlBar("LinkedIn", "Accepting description", "Keeping LinkedIn's drafted description");
+        // const replacedDescription = await fillLinkedInDescriptionEditor(jobData);
+        await continueLinkedInDescriptionStep();
+        continue;
       }
 
       if (findLinkedInFinalSubmitButton()) {
@@ -1771,14 +1769,14 @@
           message: "LinkedIn: reached the final submit/review step. Review and submit manually.",
           status: "LinkedIn ready for final review.",
         });
-        window.alert("LinkedIn is at the final review/submit step. Review everything carefully and submit manually.");
+        chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
         return;
       }
 
       if (isLinkedInGeneratedDescriptionStep()) {
-        showControlBar("LinkedIn", "Waiting for description editor", "Pasting our generated job description");
+        showControlBar("LinkedIn", "Keeping drafted description", "Letting LinkedIn's AI handle the description for now");
         await waitForLinkedInGeneratedDescription();
-        await fillLinkedInDescriptionEditor(jobData);
+        // await fillLinkedInDescriptionEditor(jobData);
         const advancedDescription = await continueLinkedInDescriptionStep();
         if (advancedDescription) continue;
         await sleep(600);
@@ -1806,7 +1804,7 @@
           message: "LinkedIn: automation paused because no Continue button was visible.",
           status: "LinkedIn paused for manual review.",
         });
-        window.alert("LinkedIn automation paused because no Continue button was visible. Review the current step manually.");
+        chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
         return;
       }
 
@@ -1821,7 +1819,7 @@
       message: "LinkedIn: stopped after too many step transitions without reaching final review.",
       status: "LinkedIn paused for manual review.",
     });
-    window.alert("LinkedIn automation stopped before reaching the final review step. Please review the current page manually.");
+    chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
   }
 
   async function applyPlan(plan) {
@@ -1910,6 +1908,7 @@
           message: `${platformLabel}: user stopped the guided automation.`,
           status: `${platformLabel} stopped.`,
         });
+        chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
       });
       document.body.appendChild(root);
     }
