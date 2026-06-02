@@ -39,6 +39,7 @@ import { toast } from "sonner";
 type JobPostingLog = {
   id: string;
   jobPostingId: string | null;
+  postingId?: string | null;
   postingSourceId: string | null;
   platform: string | null;
   status: string | null;
@@ -86,11 +87,36 @@ export default function PostingLogsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobPostingLogs")
-        .select("*, jobPostings(title)")
+        .select("*")
         .order("lastAttemptAt", { ascending: false });
 
       if (error) throw error;
-      return (data ?? []) as JobPostingLog[];
+      
+      const logs = (data ?? []) as JobPostingLog[];
+      
+      // Fetch job titles manually to avoid foreign key relationship errors
+      if (logs.length > 0) {
+        const postingIds = Array.from(new Set(logs.map(log => log.jobPostingId || log.postingId).filter(Boolean)));
+        
+        if (postingIds.length > 0) {
+          const { data: postings } = await supabase
+            .from("jobPostings")
+            .select("id, title")
+            .in("id", postingIds);
+            
+          if (postings) {
+            const titleMap = new Map(postings.map(p => [p.id, p.title]));
+            logs.forEach(log => {
+              const pid = log.jobPostingId || log.postingId;
+              if (pid && titleMap.has(pid)) {
+                log.jobPostings = { title: titleMap.get(pid) as string };
+              }
+            });
+          }
+        }
+      }
+      
+      return logs;
     },
   });
 
