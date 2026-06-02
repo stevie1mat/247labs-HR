@@ -1641,8 +1641,17 @@
     if (!button) return false;
 
     showControlBar("LinkedIn", "Advancing step", "Clicking Continue after the description was accepted");
-    clickElementLikeUser(button);
-    await sleep(2200);
+    
+    // Just use a native click, no extra fake events
+    button.click();
+    
+    // Wait up to 10 seconds for the step to transition or the button to disappear
+    await waitForCondition(() => {
+      const currentBtn = findLinkedInContinueButton();
+      return !currentBtn || !isLinkedInGeneratedDescriptionStep();
+    }, 10000, 500);
+
+    await sleep(1000);
     return true;
   }
 
@@ -1809,8 +1818,15 @@
       }
 
       showControlBar("LinkedIn", "Advancing step", "Clicking Continue");
-      clickElementLikeUser(continueButton);
-      await sleep(1800);
+      continueButton.click();
+      
+      // Wait for the button to disappear or the page to transition
+      await waitForCondition(() => {
+        const btn = findLinkedInContinueButton();
+        return !btn || btn !== continueButton;
+      }, 10000, 500);
+      
+      await sleep(1000);
     }
 
     removeControlBar();
