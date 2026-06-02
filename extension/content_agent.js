@@ -1173,7 +1173,20 @@
   async function fillContentEditable(element, value) {
     element.focus();
     document.execCommand("selectAll", false, null);
-    document.execCommand("insertText", false, value);
+    
+    try {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", value);
+      const pasteEvent = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dataTransfer });
+      element.dispatchEvent(pasteEvent);
+    } catch (err) {
+      console.warn("[247Labs Extension] Paste event failed, falling back to execCommand", err);
+    }
+
+    if (!element.innerText || element.innerText.length < value.length * 0.5) {
+      document.execCommand("insertText", false, value);
+    }
+
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
 
