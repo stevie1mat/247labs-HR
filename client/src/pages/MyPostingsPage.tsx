@@ -58,47 +58,12 @@ export default function MyPostingsPage() {
   const { data: postings, isLoading } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: async () => {
-        const { data, error } = await supabase
-          .from('jobPostings')
-          .select('*')
-          .order('createdAt', { ascending: false });
+        const { data, error } = await supabase.from('jobPostings').select('*').order('createdAt', { ascending: false });
 
         if (error) throw error;
-
-        const postingIds = (data ?? []).map((posting: any) => posting.id).filter(Boolean);
-        let logs: any[] = [];
-
-        if (postingIds.length) {
-          const [{ data: logsByJobPostingId, error: jobPostingLogError }, { data: logsByPostingId, error: postingLogError }] =
-            await Promise.all([
-              supabase
-                .from('jobPostingLogs')
-                .select('jobPostingId, postingId, platform')
-                .in('jobPostingId', postingIds),
-              supabase
-                .from('jobPostingLogs')
-                .select('jobPostingId, postingId, platform')
-                .in('postingId', postingIds),
-            ]);
-
-          if (jobPostingLogError) throw jobPostingLogError;
-          if (postingLogError) throw postingLogError;
-
-          logs = [...(logsByJobPostingId ?? []), ...(logsByPostingId ?? [])];
-        }
-
-        const logsByPostingId = (logs ?? []).reduce((acc: Record<string, any[]>, log: any) => {
-          const id = String(log.jobPostingId || log.postingId || "");
-          if (!id) return acc;
-          acc[id] = acc[id] || [];
-          acc[id].push(log);
-          return acc;
-        }, {});
-
         return (data ?? []).map((posting: any) => ({
           ...posting,
           postedAt: posting.postedAt ?? posting.createdAt,
-          jobPostingLogs: logsByPostingId[String(posting.id)] ?? [],
         }));
     }
   });
@@ -108,6 +73,19 @@ export default function MyPostingsPage() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('applicants').select('id, jobPostingId');
+        if (error) throw error;
+        return data || [];
+      } catch {
+        return [];
+      }
+    }
+  });
+
+  const { data: postingLogs } = useQuery({
+    queryKey: ['jobPostingLogs_platforms'],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('jobPostingLogs').select('jobPostingId, platform');
         if (error) throw error;
         return data || [];
       } catch {
@@ -411,7 +389,7 @@ export default function MyPostingsPage() {
                     {posting.status === "open" || posting.status === "active" ? <Circle className="w-4 h-4 mr-1.5" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-4 h-4 mr-1.5" /> : <XCircle className="w-4 h-4 mr-1.5" />}
                     {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
                   </Badge>
-                  {posting.jobPostingLogs && posting.jobPostingLogs.length > 0 && Array.from(new Set(posting.jobPostingLogs.map((l: any) => l.platform).filter(Boolean))).map(platform => (
+                  {postingLogs && postingLogs.filter((l: any) => l.jobPostingId === posting.id && l.platform).length > 0 && Array.from(new Set(postingLogs.filter((l: any) => l.jobPostingId === posting.id).map((l: any) => l.platform))).map(platform => (
                     <Badge
                       key={platform as string}
                       variant="outline"
