@@ -1630,6 +1630,17 @@
     return true;
   }
 
+  async function triggerLinkedInDraftWithAI() {
+    const aiButton = findTextNode(["draft with ai"], "button, span, div");
+    if (!aiButton) return false;
+    
+    showControlBar("LinkedIn", "Drafting with AI", "Clicking LinkedIn's AI drafting button");
+    clickElementLikeUser(aiButton);
+    
+    await sleep(4000);
+    return true;
+  }
+
   function hasLinkedInDescriptionValidationError() {
     return Boolean(
       findTextNode(
@@ -1676,13 +1687,24 @@
     }, 10000, 500);
 
     if (!didTransition) {
-      chrome.runtime.sendMessage({
-        type: "EXTENSION_LOG",
-        message: "LinkedIn: step did not transition, reloading page to force progress...",
-        status: "Reloading to recover...",
-      });
-      window.location.reload();
-      await new Promise(() => {});
+      if (hasLinkedInDescriptionValidationError()) {
+        removeControlBar();
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: validation error detected. Please correct the fields manually and click Continue.",
+          status: "Paused for manual correction...",
+        });
+        chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
+        return false;
+      } else {
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: step did not transition, reloading page to force progress...",
+          status: "Reloading to recover...",
+        });
+        window.location.reload();
+        await new Promise(() => {});
+      }
     }
 
     await sleep(1000);
@@ -1808,8 +1830,7 @@
       }
 
       if (isLinkedInDescriptionReviewCard(jobData)) {
-        showControlBar("LinkedIn", "Writing job description", "Replacing LinkedIn's draft with our exact description");
-        await fillLinkedInDescriptionEditor(jobData);
+        showControlBar("LinkedIn", "Accepting description", "Keeping LinkedIn's drafted description");
         await continueLinkedInDescriptionStep();
         continue;
       }
@@ -1826,9 +1847,10 @@
       }
 
       if (isLinkedInGeneratedDescriptionStep()) {
-        showControlBar("LinkedIn", "Writing job description", "Replacing LinkedIn's AI draft with our exact description");
+        showControlBar("LinkedIn", "Drafting job description", "Letting LinkedIn's AI draft the description");
         await waitForLinkedInGeneratedDescription();
-        await fillLinkedInDescriptionEditor(jobData);
+        // Just trigger LinkedIn's AI and continue with it
+        await triggerLinkedInDraftWithAI();
         const advancedDescription = await continueLinkedInDescriptionStep();
         if (advancedDescription) continue;
         await sleep(600);
@@ -1879,13 +1901,24 @@
       }, 10000, 500);
 
       if (!didTransition) {
-        chrome.runtime.sendMessage({
-          type: "EXTENSION_LOG",
-          message: "LinkedIn: step did not transition, reloading page to force progress...",
-          status: "Reloading to recover...",
-        });
-        window.location.reload();
-        await new Promise(() => {});
+        if (hasLinkedInDescriptionValidationError()) {
+          removeControlBar();
+          chrome.runtime.sendMessage({
+            type: "EXTENSION_LOG",
+            message: "LinkedIn: validation error detected. Please correct the fields manually and click Continue.",
+            status: "Paused for manual correction...",
+          });
+          chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
+          return;
+        } else {
+          chrome.runtime.sendMessage({
+            type: "EXTENSION_LOG",
+            message: "LinkedIn: step did not transition, reloading page to force progress...",
+            status: "Reloading to recover...",
+          });
+          window.location.reload();
+          await new Promise(() => {});
+        }
       }
       
       await sleep(1000);

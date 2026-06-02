@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 const sourceBadgeMap: Record<string, string> = {
   elementor: "WordPress",
@@ -33,6 +34,10 @@ export default function ApplicantsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [resumeFilter, setResumeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("recent");
+  const [evaluating, setEvaluating] = useState<Record<string, boolean>>({});
+  
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Fetch job postings
   const { data: postings, isLoading: isLoadingPostings } = useQuery({
@@ -99,6 +104,33 @@ export default function ApplicantsPage() {
 
     setSelectedPostingId(matchedPosting?.id ?? safePostings[0].id);
   }
+
+  const handleEvaluateApplicant = async (applicantId: string) => {
+    setEvaluating((prev) => ({ ...prev, [applicantId]: true }));
+    try {
+      const { data, error } = await supabase.functions.invoke("evaluate-applicant", {
+        body: { applicantId }
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Evaluation Complete",
+        description: "The applicant's resume has been successfully scanned.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['applicants'] });
+      queryClient.invalidateQueries({ queryKey: ['activityLogs'] });
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Evaluation Failed",
+        description: err.message || "Failed to evaluate the applicant.",
+        variant: "destructive"
+      });
+    } finally {
+      setEvaluating((prev) => ({ ...prev, [applicantId]: false }));
+    }
+  };
 
   if (isLoading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -388,17 +420,45 @@ export default function ApplicantsPage() {
                         </div>
 
                         <div className="shrink-0 flex flex-col items-end">
-                          <div className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-700">
-                            <Sparkles className="h-4 w-4" />
-                            <span className="font-bold">{applicant.aiScore || 0}/100</span>
-                          </div>
-                          <div className="flex items-center gap-1 mt-2">
-                            {[1,2,3,4,5].map(star => (
-                              <svg key={star} className={cn("w-4 h-4", star <= Math.round((applicant.aiScore || 0) / 20) ? "text-amber-400 fill-current" : "text-slate-200")} viewBox="0 0 20 20">
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                              </svg>
-                            ))}
-                          </div>
+                          {applicant.aiScore ? (
+                            <>
+                              <div className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-700">
+                                <Sparkles className="h-4 w-4" />
+                                <span className="font-bold">{applicant.aiScore || 0}/100</span>
+                              </div>
+                              <div className="flex items-center gap-1 mt-2">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <svg
+                                    key={star}
+                                    className={cn(
+                                      "w-4 h-4",
+                                      star <= Math.round((applicant.aiScore || 0) / 20)
+                                        ? "text-amber-400 fill-current"
+                                        : "text-slate-200"
+                                    )}
+                                    viewBox="0 0 20 20"
+                                  >
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                  </svg>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <Button
+                              onClick={() => handleEvaluateApplicant(applicant.id)}
+                              disabled={evaluating[applicant.id]}
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 bg-amber-50 text-amber-600 hover:bg-amber-100 border-amber-200 shadow-sm transition-all"
+                            >
+                              {evaluating[applicant.id] ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-4 h-4" />
+                              )}
+                              {evaluating[applicant.id] ? "Evaluating..." : "Evaluate with AI"}
+                            </Button>
+                          )}
                         </div>
                       </div>
                       
