@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { logActivity } from "@/lib/activityLogs";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,10 @@ const platformIcons: Record<string, string> = {
   remotive: "https://logos-world.net/wp-content/uploads/2022/01/Remotive-Emblem.png",
 };
 
+function displaySourceName(name?: string | null) {
+  return (name || "").replace(/\s+Source$/, "").trim();
+}
+
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -83,6 +88,7 @@ export default function TemplatesPage() {
   const [viewingTemplate, setViewingTemplate] = useState<any | null>(null);
   const [postingTemplateId, setPostingTemplateId] = useState<number | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<number[]>([]);
+  const [postSuccessTitle, setPostSuccessTitle] = useState<string | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateStep, setGenerateStep] = useState<1 | 2 | 3>(1);
   const [positionInput, setPositionInput] = useState("");
@@ -107,7 +113,7 @@ export default function TemplatesPage() {
   const { data: sources } = useQuery({
     queryKey: ["postingSources"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("postingSources").select("*").eq("isActive", true);
+      const { data, error } = await supabase.from("postingSources").select("*").order("id", { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -115,11 +121,27 @@ export default function TemplatesPage() {
 
   const createTemplate = useMutation({
     mutationFn: async (payload: any) => {
-      const { error } = await supabase.from("jobTemplates").insert([payload]);
+      const { data, error } = await supabase.from("jobTemplates").insert([payload]).select().single();
       if (error) throw error;
+      await logActivity({
+        action: "template_created",
+        category: "templates",
+        entityType: "job_template",
+        entityId: data.id,
+        title: `Template created: ${data.title}`,
+        detail: "A new job template was added to the hiring library.",
+        statusTone: "success",
+        templateId: data.id,
+        metadata: {
+          category: data.category,
+          version: data.version,
+          isActive: data.isActive,
+        },
+      });
     },
     onSuccess: () => {
       refetch();
+      queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
       toast.success("Template created!");
       setShowDialog(false);
     },
@@ -127,23 +149,50 @@ export default function TemplatesPage() {
 
   const updateTemplate = useMutation({
     mutationFn: async ({ id, ...payload }: any) => {
-      const { error } = await supabase.from("jobTemplates").update(payload).eq("id", id);
+      const { data, error } = await supabase.from("jobTemplates").update(payload).eq("id", id).select().single();
       if (error) throw error;
+      await logActivity({
+        action: "template_updated",
+        category: "templates",
+        entityType: "job_template",
+        entityId: data.id,
+        title: `Template updated: ${data.title}`,
+        detail: "Template content or settings were updated.",
+        statusTone: "neutral",
+        templateId: data.id,
+        metadata: {
+          category: data.category,
+          version: data.version,
+          isActive: data.isActive,
+        },
+      });
     },
     onSuccess: () => {
       refetch();
+      queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
       toast.success("Template updated!");
       setShowDialog(false);
     },
   });
 
   const deleteTemplate = useMutation({
-    mutationFn: async ({ id }: any) => {
+    mutationFn: async ({ id, title }: any) => {
+      await logActivity({
+        action: "template_deleted",
+        category: "templates",
+        entityType: "job_template",
+        entityId: id,
+        title: `Template deleted: ${title}`,
+        detail: "A template was removed from the hiring library.",
+        statusTone: "warning",
+        templateId: id,
+      });
       const { error } = await supabase.from("jobTemplates").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       refetch();
+      queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
       toast.success("Template deleted.");
     },
   });
@@ -151,6 +200,43 @@ export default function TemplatesPage() {
   const postFromTemplate = useMutation({
     mutationFn: async ({ templateId, sourceIds }: { templateId: number; sourceIds?: number[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // Dispatch event to the Desktop App or Chrome Extension
+      const template = templates?.find((t: any) => t.id === templateId);
+      const platformsToPost = sources?.filter((s: any) => sourceIds?.includes(s.id)).map((s: any) => s.platform);
+      
+      const payload = {
+        platforms: platformsToPost,
+        jobData: template
+      };
+
+      await logActivity({
+        action: "job_distribution_requested",
+        category: "distribution",
+        entityType: "job_template",
+        entityId: String(templateId),
+        title: `Posting started from template: ${template?.title ?? "Untitled template"}`,
+        detail: `Distribution was requested for ${platformsToPost?.length ?? 0} platform${(platformsToPost?.length ?? 0) === 1 ? "" : "s"}.`,
+        statusTone: "neutral",
+        templateId: String(templateId),
+        metadata: {
+          sourceIds,
+          platforms: platformsToPost ?? [],
+        },
+      });
+
+      // @ts-ignore
+      if (window.electronAPI) {
+        // @ts-ignore
+        await window.electronAPI.postJob(payload);
+      } else {
+        window.postMessage({
+          type: "POST_JOB_EXTENSION",
+          payload: payload
+        }, "*");
+      }
+
+      // Still call the edge function to log the event in the DB
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
         method: "POST",
         headers: {
@@ -164,12 +250,11 @@ export default function TemplatesPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Job posted successfully to all active platforms!");
       queryClient.invalidateQueries({ queryKey: ["jobPostings"] });
       queryClient.invalidateQueries({ queryKey: ["jobRequests"] });
-      setPostingTemplateId(null);
-      setSelectedSourceIds([]);
-      setLocation("/my-postings");
+      queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
+      const title = templates?.find((template: any) => template.id === postingTemplateId)?.title ?? "Job";
+      setPostSuccessTitle(title);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -205,12 +290,15 @@ export default function TemplatesPage() {
 
       return res.json() as Promise<GeneratedTemplate>;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
+      const cleanedDescription = data.description.replace(/\*\*/g, "").replace(/#/g, "");
+      const cleanedRequirements = data.requirements.replace(/\*\*/g, "").replace(/#/g, "");
+
       setGeneratedTemplate({
         title: data.title ?? positionInput,
         category: data.category ?? "",
-        description: data.description ?? "",
-        requirements: data.requirements ?? "",
+        description: cleanedDescription,
+        requirements: cleanedRequirements,
         salaryRange: data.salaryRange ?? "",
       });
       setGenerateStep(3);
@@ -250,6 +338,14 @@ export default function TemplatesPage() {
     )
   ).sort((a, b) => a.localeCompare(b));
 
+  const activeSources = (sources ?? []).filter((source: any) => source.isActive);
+
+  const resetPostDialog = () => {
+    setPostingTemplateId(null);
+    setSelectedSourceIds([]);
+    setPostSuccessTitle(null);
+  };
+
   const openCreate = () => {
     setEditingId(null);
     setForm({ title: "", category: "", description: "", requirements: "", salaryRange: "", version: 1, isActive: true });
@@ -272,10 +368,13 @@ export default function TemplatesPage() {
 
   const openPostDialog = (templateId: number) => {
     setPostingTemplateId(templateId);
-    setSelectedSourceIds((sources ?? []).map((source: any) => source.id));
+    setSelectedSourceIds((sources ?? []).filter((source: any) => source.isActive).map((source: any) => source.id));
   };
 
   const toggleSelectedSource = (sourceId: number) => {
+    const source = (sources ?? []).find((item: any) => item.id === sourceId);
+    if (!source?.isActive) return;
+
     setSelectedSourceIds(prev => (
       prev.includes(sourceId)
         ? prev.filter(id => id !== sourceId)
@@ -526,7 +625,7 @@ export default function TemplatesPage() {
                         <Button variant="ghost" size="sm" onClick={() => openEdit(template)} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/10 hover:text-primary">
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
+                        <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id, title: template.title }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -597,7 +696,7 @@ export default function TemplatesPage() {
                       <Button variant="ghost" size="sm" onClick={() => openEdit(template)} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(120,19,124,0.06)] hover:bg-primary/10 hover:text-primary">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
+                      <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this template?")) deleteTemplate.mutate({ id: template.id, title: template.title }); }} className="h-9 w-9 rounded-md border border-slate-200 bg-white p-0 text-slate-700 shadow-[0_8px_16px_rgba(239,68,68,0.06)] hover:bg-red-50 hover:text-red-500">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -611,8 +710,7 @@ export default function TemplatesPage() {
 
       <AlertDialog open={postingTemplateId !== null} onOpenChange={(open) => {
         if (!open && !postFromTemplate.isPending) {
-          setPostingTemplateId(null);
-          setSelectedSourceIds([]);
+          resetPostDialog();
         }
       }}>
         <AlertDialogContent>
@@ -626,23 +724,52 @@ export default function TemplatesPage() {
                 Please wait while we automatically post your job to all active platforms.
               </p>
             </div>
+          ) : postSuccessTitle ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-900">Job posted successfully</h2>
+              <p className="mt-2 max-w-[320px] text-sm leading-6 text-slate-500">
+                <strong className="font-semibold text-slate-700">{postSuccessTitle}</strong> was posted to the selected platforms.
+              </p>
+              <div className="mt-6 flex w-full justify-center">
+                <Button
+                  className="min-w-[180px] bg-emerald-600 text-white hover:bg-emerald-700"
+                  onClick={() => {
+                    resetPostDialog();
+                    setLocation("/my-postings");
+                  }}
+                >
+                  Continue
+                </Button>
+              </div>
+            </div>
           ) : (
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="mt-2 text-slate-500">
-                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the selected active platforms:
-                    {sources && sources.length > 0 ? (
+                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the selected platforms:
+                    {activeSources.length > 0 ? (
                       <div className="mt-3 flex flex-col gap-2">
-                        {sources.map((s: any) => (
+                        {activeSources.map((s: any) => (
                           <button
                             key={s.id}
                             type="button"
                             onClick={() => toggleSelectedSource(s.id)}
-                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${selectedSourceIds.includes(s.id) ? "border-primary/30 bg-primary/5" : "border-slate-200 bg-slate-50"}`}
+                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                              selectedSourceIds.includes(s.id)
+                                ? "border-primary/30 bg-primary/5"
+                                : "border-slate-200 bg-slate-50"
+                            }`}
                           >
-                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selectedSourceIds.includes(s.id) ? "border-primary bg-primary text-white" : "border-slate-300 bg-white"}`}>
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                              selectedSourceIds.includes(s.id)
+                                ? "border-primary bg-primary text-white"
+                                : "border-slate-300 bg-white"
+                            }`}>
                               {selectedSourceIds.includes(s.id) ? <Check className="h-3.5 w-3.5" /> : null}
                             </div>
                             {platformIcons[s.platform] ? (
@@ -650,14 +777,13 @@ export default function TemplatesPage() {
                             ) : (
                               <div className="h-5 w-5 shrink-0 rounded bg-slate-200" />
                             )}
-                            <span className="text-sm font-medium text-slate-700">{s.name || s.platform}</span>
-                            {s.isMockMode && <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">Mock Mode</Badge>}
+                            <span className="text-sm font-medium text-slate-700">{displaySourceName(s.name) || s.platform}</span>
                           </button>
                         ))}
                       </div>
                     ) : (
                       <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                        No active platforms. Please configure platforms in the sources page before posting.
+                        No platforms available. Please enable at least one source before posting.
                       </div>
                     )}
                   </div>
@@ -673,7 +799,7 @@ export default function TemplatesPage() {
                       postFromTemplate.mutate({ templateId: postingTemplateId, sourceIds: selectedSourceIds });
                     }
                   }}
-                  disabled={postFromTemplate.isPending || !sources || sources.length === 0 || selectedSourceIds.length === 0}
+                  disabled={postFromTemplate.isPending || activeSources.length === 0 || selectedSourceIds.length === 0}
                 >
                   <Link2 className="mr-2 h-4 w-4" />
                   Post Job
@@ -884,7 +1010,7 @@ export default function TemplatesPage() {
                   <div className="flex-1">
                     <h3 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">Generating template</h3>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Building a reusable description, requirements, and salary suggestion for {positionInput}.
+                      Building a reusable WordPress-ready description, requirements, and salary suggestion for {positionInput}.
                     </p>
                     <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full w-2/3 rounded-full bg-primary" />
@@ -901,7 +1027,7 @@ export default function TemplatesPage() {
               <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
                 <div className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-emerald-700">
                   <CheckCircle2 className="h-5 w-5" />
-                  <p className="text-sm font-semibold">Job description generated. Review and refine before saving.</p>
+                  <p className="text-sm font-semibold">WordPress-ready job template generated. Review and refine before saving.</p>
                 </div>
 
                 <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">

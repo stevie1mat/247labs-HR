@@ -59,7 +59,7 @@ async def ask_llm(provider: str, client, prompt: str, screenshot_b64: Optional[s
         messages[0]["content"].append({"type": "text", "text": prompt})
 
         response = client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.2-90b-vision-preview"),
+            model=os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
             messages=messages,
             max_tokens=4096,
         )
@@ -187,13 +187,24 @@ async def run_agent(
 
     async with async_playwright() as pw:
         browser: Browser = await pw.chromium.launch(
-            headless=True,
+            headless=os.getenv("HEADLESS", "true").lower() == "true",
             args=["--no-sandbox", "--disable-setuid-sandbox"],
         )
         context = await browser.new_context(
             viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
+        
+        # Inject stealth scripts to bypass bot detection (like Cloudflare/Datadome)
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.navigator.chrome = {
+                runtime: {},
+            };
+        """)
+        
         page = await context.new_page()
 
         try:

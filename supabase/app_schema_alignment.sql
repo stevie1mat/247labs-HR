@@ -42,6 +42,57 @@ ALTER TABLE public."postingSources"
   ADD COLUMN IF NOT EXISTS "updatedAt" timestamptz DEFAULT now();
 
 -- ==========================================
+-- activityLogs
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public."activityLogs" (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  action text NOT NULL,
+  category text DEFAULT 'operations',
+  "entityType" text NOT NULL,
+  "entityId" uuid,
+  title text NOT NULL,
+  detail text,
+  platform text,
+  "sourceName" text,
+  "statusTone" text DEFAULT 'neutral',
+  "jobPostingId" uuid REFERENCES public."jobPostings"(id) ON DELETE SET NULL,
+  "templateId" uuid REFERENCES public."jobTemplates"(id) ON DELETE SET NULL,
+  "postingSourceId" uuid REFERENCES public."postingSources"(id) ON DELETE SET NULL,
+  "actorId" uuid,
+  "actorEmail" text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  "createdAt" timestamptz DEFAULT now()
+);
+
+-- ==========================================
+-- applicants
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public.applicants (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  "jobPostingId" uuid REFERENCES public."jobPostings"(id) ON DELETE SET NULL,
+  name text,
+  email text,
+  phone text,
+  location text,
+  portfolio text,
+  "coverLetter" text,
+  "resumeUrl" text,
+  "resumeFileName" text,
+  "formName" text,
+  source text DEFAULT 'elementor',
+  status text DEFAULT 'new',
+  "aiSummary" text,
+  "aiScore" integer DEFAULT 0,
+  "educationScore" integer DEFAULT 0,
+  "experienceScore" integer DEFAULT 0,
+  "locationScore" integer DEFAULT 0,
+  "skillsScore" integer DEFAULT 0,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  "createdAt" timestamptz DEFAULT now(),
+  "updatedAt" timestamptz DEFAULT now()
+);
+
+-- ==========================================
 -- jobPostingLogs
 -- ==========================================
 ALTER TABLE public."jobPostingLogs"
@@ -76,3 +127,8 @@ WHERE logs."sourceId" = sources.id
 CREATE INDEX IF NOT EXISTS idx_job_requests_created_at ON public."jobRequests" ("createdAt" DESC);
 CREATE INDEX IF NOT EXISTS idx_job_postings_created_at ON public."jobPostings" ("createdAt" DESC);
 CREATE INDEX IF NOT EXISTS idx_job_posting_logs_created_at ON public."jobPostingLogs" ("createdAt" DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON public."activityLogs" ("createdAt" DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_posting_id ON public."activityLogs" ("jobPostingId");
+CREATE INDEX IF NOT EXISTS idx_activity_logs_source_id ON public."activityLogs" ("postingSourceId");
+CREATE INDEX IF NOT EXISTS idx_applicants_created_at ON public.applicants ("createdAt" DESC);
+CREATE INDEX IF NOT EXISTS idx_applicants_job_posting_id ON public.applicants ("jobPostingId");

@@ -6,13 +6,77 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Extremely simple decoding (same as distribute-job)
-function decodePassword(encoded: string): string {
-  try {
-      return atob(encoded);
-  } catch {
-      return encoded;
+async function logActivity(supabaseClient: any, entry: Record<string, unknown>) {
+  const sanitizedEntry = { ...entry };
+
+  if (sanitizedEntry.templateId) {
+    const { data: template } = await supabaseClient
+      .from("jobTemplates")
+      .select("id")
+      .eq("id", sanitizedEntry.templateId)
+      .maybeSingle();
+
+    if (!template) {
+      sanitizedEntry.templateId = null;
+    }
   }
+
+  const { error } = await supabaseClient.from("activityLogs").insert(sanitizedEntry);
+  if (error) {
+    console.error("Failed to write activity log", error);
+  }
+}
+
+function parsePostIdFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.get("p") || parsed.searchParams.get("post") || "";
+  } catch {
+    return "";
+  }
+}
+
+function parseSlugFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return segments.at(-1) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function resolveWordPressPost(
+  siteUrl: string,
+  postType: string,
+  auth: string,
+  externalUrl: string | null,
+) {
+  const idFromUrl = externalUrl ? parsePostIdFromUrl(externalUrl) : "";
+  if (idFromUrl) {
+    return { id: idFromUrl, link: externalUrl };
+  }
+
+  const slug = externalUrl ? parseSlugFromUrl(externalUrl) : "";
+  if (slug) {
+    const slugRes = await fetch(`${siteUrl}/wp-json/wp/v2/${postType}?slug=${encodeURIComponent(slug)}&status=any&_fields=id,link,title,slug`, {
+      headers: {
+        "Authorization": `Basic ${auth}`,
+      },
+    });
+
+    if (slugRes.ok) {
+      const slugData = await slugRes.json();
+      if (Array.isArray(slugData) && slugData.length > 0) {
+        return {
+          id: String(slugData[0].id),
+          link: slugData[0].link ?? externalUrl,
+        };
+      }
+    }
+  }
+  
+  return null;
 }
 
 serve(async (req) => {
@@ -24,11 +88,30 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    const authHeader = req.headers.get('Authorization') || '';
+    const authClient = createClient(
+      supabaseUrl,
+      Deno.env.get('SUPABASE_ANON_KEY') || '',
+      { global: { headers: { Authorization: authHeader } } }
+    );
 
     const { postingId, action } = await req.json();
 
     if (!postingId || !action) {
       throw new Error("Missing postingId or action");
+    }
+
+    const jwt = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await authClient.auth.getUser(jwt);
+
+    const { data: posting, error: postingError } = await supabaseClient
+      .from("jobPostings")
+      .select("*")
+      .eq("id", postingId)
+      .single();
+
+    if (postingError || !posting) {
+      throw postingError || new Error("Posting not found");
     }
 
     // 1. Get logs to find external IDs
@@ -48,7 +131,11 @@ serve(async (req) => {
 
     if (sourcesError) throw sourcesError;
 
-    const debugInfo: any = { logsFound: logs?.length || 0, wpErrors: [] };
+    const debugInfo: any = {
+      logsFound: logs?.length || 0,
+      wpErrors: [],
+      wpRequests: [],
+    };
 
     // 3. Process each external platform
     for (const log of (logs || [])) {
@@ -58,10 +145,31 @@ serve(async (req) => {
         if (!source || source.platform !== 'wordpress') continue;
 
         try {
-            const siteUrl = source.credentials.siteUrl || source.credentials.url || source.credentials.apiUrl;
-            const apiUrl = siteUrl.replace(/\/$/, '') + '/wp-json/wp/v2/careers/' + log.externalJobId;
-            const password = decodePassword(source.credentials.appPassword);
-            const auth = btoa(`${source.credentials.username}:${password}`);
+            const creds = source.credentials || {};
+            const siteUrl = String(creds.siteUrl || creds.url || creds.apiUrl || "").trim().replace(/\/$/, "");
+            const postType = creds.postType || "career";
+            const username = String(creds.username || "").trim();
+            const password = String(creds.applicationPassword || creds.appPassword || "").trim();
+            const auth = btoa(`${username}:${password}`);
+
+            if (!siteUrl || !username || !password) {
+                throw new Error("Missing WordPress credentials for manage-posting");
+            }
+
+            let resolvedExternalJobId = String(log.externalJobId);
+            let resolvedExternalUrl = log.externalUrl || null;
+
+            const apiUrl = `${siteUrl}/wp-json/wp/v2/${postType}/${resolvedExternalJobId}`;
+
+            debugInfo.wpRequests.push({
+              postingSourceId: source.id ?? null,
+              externalJobId: resolvedExternalJobId ?? null,
+              postType,
+              username,
+              apiUrl,
+              action,
+              previousExternalJobId: log.externalJobId ?? null,
+            });
 
             if (action === 'fulfill' || action === 'close') {
                 const res = await fetch(apiUrl, {
@@ -73,49 +181,227 @@ serve(async (req) => {
                     body: JSON.stringify({ status: 'draft' })
                 });
                 if (!res.ok) {
-                    debugInfo.wpErrors.push(await res.text());
-                }
-            } else if (action === 'delete') {
-                let res = await fetch(apiUrl + "?force=true", {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${auth}`,
-                        'X-HTTP-Method-Override': 'DELETE'
-                    }
-                });
-                
-                if (!res.ok) {
-                    // Fallback to just drafting it via standard POST (since we know POST works and draft is supported)
-                    res = await fetch(apiUrl, {
+                    const responseText = await res.text();
+                    const resolvedPost = await resolveWordPressPost(
+                      siteUrl,
+                      postType,
+                      auth,
+                      resolvedExternalUrl,
+                    );
+
+                    if (resolvedPost?.id && resolvedPost.id !== resolvedExternalJobId) {
+                      resolvedExternalJobId = resolvedPost.id;
+                      resolvedExternalUrl = resolvedPost.link ?? resolvedExternalUrl;
+
+                      await supabaseClient
+                        .from("jobPostingLogs")
+                        .update({
+                          externalJobId: resolvedExternalJobId,
+                          externalUrl: resolvedExternalUrl,
+                          lastAttemptAt: new Date().toISOString(),
+                        })
+                        .eq("id", log.id);
+
+                      const retryApiUrl = `${siteUrl}/wp-json/wp/v2/${postType}/${resolvedExternalJobId}`;
+                      const retryRes = await fetch(retryApiUrl, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Basic ${auth}`
+                          'Content-Type': 'application/json',
+                          'Authorization': `Basic ${auth}`
                         },
                         body: JSON.stringify({ status: 'draft' })
+                      });
+
+                      if (retryRes.ok) {
+                        continue;
+                      }
+
+                      debugInfo.wpErrors.push({
+                        postingSourceId: source.id ?? null,
+                        externalJobId: resolvedExternalJobId ?? null,
+                        postType,
+                        username,
+                        apiUrl: retryApiUrl,
+                        action,
+                        previousExternalJobId: log.externalJobId ?? null,
+                        response: await retryRes.text(),
+                      });
+                      continue;
+                    }
+
+                    debugInfo.wpErrors.push({
+                      postingSourceId: source.id ?? null,
+                      externalJobId: resolvedExternalJobId ?? null,
+                      postType,
+                      username,
+                      apiUrl,
+                      action,
+                      previousExternalJobId: log.externalJobId ?? null,
+                      response: responseText,
                     });
                 }
-                
+            } else if (action === 'relist') {
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Basic ${auth}`
+                    },
+                    body: JSON.stringify({ status: 'publish' })
+                });
                 if (!res.ok) {
-                    debugInfo.wpErrors.push(await res.text());
+                    const responseText = await res.text();
+                    const resolvedPost = await resolveWordPressPost(
+                      siteUrl,
+                      postType,
+                      auth,
+                      resolvedExternalUrl,
+                    );
+
+                    if (resolvedPost?.id && resolvedPost.id !== resolvedExternalJobId) {
+                      resolvedExternalJobId = resolvedPost.id;
+                      resolvedExternalUrl = resolvedPost.link ?? resolvedExternalUrl;
+
+                      await supabaseClient
+                        .from("jobPostingLogs")
+                        .update({
+                          externalJobId: resolvedExternalJobId,
+                          externalUrl: resolvedExternalUrl,
+                          lastAttemptAt: new Date().toISOString(),
+                        })
+                        .eq("id", log.id);
+
+                      const retryApiUrl = `${siteUrl}/wp-json/wp/v2/${postType}/${resolvedExternalJobId}`;
+                      const retryRes = await fetch(retryApiUrl, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Basic ${auth}`
+                        },
+                        body: JSON.stringify({ status: 'publish' })
+                      });
+
+                      if (retryRes.ok) {
+                        continue;
+                      }
+
+                      debugInfo.wpErrors.push({
+                        postingSourceId: source.id ?? null,
+                        externalJobId: resolvedExternalJobId ?? null,
+                        postType,
+                        username,
+                        apiUrl: retryApiUrl,
+                        action,
+                        previousExternalJobId: log.externalJobId ?? null,
+                        response: await retryRes.text(),
+                      });
+                      continue;
+                    }
+
+                    debugInfo.wpErrors.push({
+                      postingSourceId: source.id ?? null,
+                      externalJobId: resolvedExternalJobId ?? null,
+                      postType,
+                      username,
+                      apiUrl,
+                      action,
+                      previousExternalJobId: log.externalJobId ?? null,
+                      response: responseText,
+                    });
+                }
+            } else if (action === 'delete') {
+                const deleteUrl = `${apiUrl}?force=true`;
+                const res = await fetch(deleteUrl, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Basic ${auth}`
+                    },
+                });
+
+                if (!res.ok) {
+                    debugInfo.wpErrors.push({
+                      postingSourceId: source.id ?? null,
+                      externalJobId: resolvedExternalJobId ?? null,
+                      postType,
+                      username,
+                      apiUrl: deleteUrl,
+                      action,
+                      previousExternalJobId: log.externalJobId ?? null,
+                      response: await res.text(),
+                    });
                 }
             }
         } catch (err: any) {
-            debugInfo.wpErrors.push(err.message);
+            debugInfo.wpErrors.push({
+              action,
+              error: err.message,
+            });
         }
     }
 
-    // 4. Update or Delete local DB
+    if (action === "delete" && debugInfo.wpErrors.length > 0) {
+      return new Response(JSON.stringify({
+        error: "WordPress delete failed",
+        debug: debugInfo,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    // 4. Update local DB
     if (action === 'delete') {
-        const { error } = await supabaseClient
-            .from('jobPostings')
-            .delete()
-            .eq('id', postingId);
-        if (error) throw error;
+        const { error: deleteApplicantsError } = await supabaseClient
+          .from("applicants")
+          .delete()
+          .eq("jobPostingId", postingId);
+        if (deleteApplicantsError) throw deleteApplicantsError;
+
+        const { error: deleteLogsByJobPostingError } = await supabaseClient
+          .from("jobPostingLogs")
+          .delete()
+          .eq("jobPostingId", postingId);
+        if (deleteLogsByJobPostingError) throw deleteLogsByJobPostingError;
+
+        const { error: deleteLogsByPostingError } = await supabaseClient
+          .from("jobPostingLogs")
+          .delete()
+          .eq("postingId", postingId);
+        if (deleteLogsByPostingError) throw deleteLogsByPostingError;
+
+        const { error: deletePostingError } = await supabaseClient
+          .from("jobPostings")
+          .delete()
+          .eq("id", postingId);
+        if (deletePostingError) throw deletePostingError;
+
+        await logActivity(supabaseClient, {
+          action: "job_posting_deleted",
+          category: "lifecycle",
+          entityType: "job_posting",
+          entityId: postingId,
+          title: `Job deleted permanently: ${posting.title}`,
+          detail: "The posting was permanently deleted from the dashboard, related local records were removed, and the linked WordPress listing was permanently deleted.",
+          statusTone: "warning",
+          jobPostingId: null,
+          templateId: posting.templateId ?? null,
+          actorId: user?.id ?? null,
+          actorEmail: user?.email ?? null,
+          metadata: {
+            jobTitle: posting.title,
+            previousStatus: posting.status ?? null,
+            nextStatus: "deleted",
+            externalLogsFound: logs?.length || 0,
+            deletedApplicants: true,
+            deletedPostingLogs: true,
+          },
+        });
     } else {
-        const updatePayload = action === 'fulfill' 
+        const updatePayload = action === 'fulfill'
             ? { status: 'fulfilled', fulfilledAt: new Date().toISOString() }
-            : { status: 'closed', fulfilledAt: null };
+            : action === 'relist'
+              ? { status: 'active', fulfilledAt: null, postedAt: new Date().toISOString() }
+              : { status: 'draft', fulfilledAt: null };
 
         const { error } = await supabaseClient
             .from('jobPostings')
@@ -123,6 +409,30 @@ serve(async (req) => {
             .eq('id', postingId);
         
         if (error) throw error;
+
+        await logActivity(supabaseClient, {
+          action: action === "fulfill" ? "job_posting_fulfilled" : action === "relist" ? "job_posting_relisted" : "job_posting_closed",
+          category: "lifecycle",
+          entityType: "job_posting",
+          entityId: postingId,
+          title: `${action === "fulfill" ? "Job fulfilled" : action === "relist" ? "Job relisted" : "Job moved to draft"}: ${posting.title}`,
+          detail: action === "fulfill"
+            ? "The role was marked as fulfilled and removed from the active pipeline."
+            : action === "relist"
+              ? "The role was republished and returned to the active pipeline."
+              : "The role was moved to draft and removed from active distribution.",
+          statusTone: action === "fulfill" || action === "relist" ? "success" : "neutral",
+          jobPostingId: postingId,
+          templateId: posting.templateId ?? null,
+          actorId: user?.id ?? null,
+          actorEmail: user?.email ?? null,
+          metadata: {
+            jobTitle: posting.title,
+            previousStatus: posting.status ?? null,
+            nextStatus: updatePayload.status,
+            externalLogsFound: logs?.length || 0,
+          },
+        });
     }
 
     return new Response(JSON.stringify({ success: true, debug: debugInfo }), {

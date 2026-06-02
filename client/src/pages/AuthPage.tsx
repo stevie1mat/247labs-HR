@@ -27,8 +27,8 @@ export function AuthPage() {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        // Explicitly redirect to dashboard/home on success
-        setLocation("/");
+        // Send signed-in users straight to the dashboard.
+        setLocation("/dashboard");
       } else {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;

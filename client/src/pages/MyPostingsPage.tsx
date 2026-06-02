@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -32,16 +31,20 @@ import {
 import {
   Loader2, Briefcase, MessageSquarePlus, Clock,
   CheckCircle2, Circle, MoreVertical, RefreshCw,
-  Users, XCircle, Trash2, Search, List, LayoutGrid
+  Users, XCircle, Search, List, LayoutGrid, AlertTriangle, Trash2
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { formatDistanceToNow, format } from "date-fns";
-import { toast } from "sonner";
 
 export default function MyPostingsPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
-  const [confirmManage, setConfirmManage] = useState<{id: number, action: 'fulfill' | 'close' | 'delete'} | null>(null);
+  const [confirmManage, setConfirmManage] = useState<{id: number, action: 'fulfill' | 'close' | 'relist' | 'delete'} | null>(null);
+  const [manageResult, setManageResult] = useState<{
+    status: "success" | "warning" | "error";
+    title: string;
+    detail: string;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -50,13 +53,61 @@ export default function MyPostingsPage() {
     queryKey: ['jobPostings'],
     queryFn: async () => {
         const { data, error } = await supabase.from('jobPostings').select('*').order('createdAt', { ascending: false });
+
         if (error) throw error;
-        return data;
+
+        return (data ?? []).map((posting: any) => ({
+          ...posting,
+          postedAt: posting.postedAt ?? posting.createdAt,
+        }));
     }
   });
 
+  const { data: applicants } = useQuery({
+    queryKey: ['applicants'],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('applicants').select('id, jobPostingId');
+        if (error) throw error;
+        return data || [];
+      } catch {
+        return [];
+      }
+    }
+  });
+
+  const formatWpDebugError = (errorEntry: any) => {
+    if (!errorEntry) {
+      return "Unknown WordPress error";
+    }
+
+    if (typeof errorEntry === "string") {
+      return errorEntry;
+    }
+
+    const response = typeof errorEntry.response === "string" ? errorEntry.response : "";
+    const parsedResponse = (() => {
+      if (!response) return "";
+      try {
+        const parsed = JSON.parse(response);
+        return parsed?.message || parsed?.code || response;
+      } catch {
+        return response;
+      }
+    })();
+
+    const details = [
+      parsedResponse,
+      errorEntry.postType ? `postType: ${errorEntry.postType}` : "",
+      errorEntry.externalJobId ? `externalJobId: ${errorEntry.externalJobId}` : "",
+      errorEntry.username ? `user: ${errorEntry.username}` : "",
+    ].filter(Boolean);
+
+    return details.join(" | ") || errorEntry.error || "Unknown WordPress error";
+  };
+
   const managePostingMutation = useMutation({
-    mutationFn: async ({ id, action }: { id: number, action: 'fulfill' | 'close' | 'delete' }) => {
+    mutationFn: async ({ id, action }: { id: number, action: 'fulfill' | 'close' | 'relist' | 'delete' }) => {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-posting`, {
             method: 'POST',
@@ -79,19 +130,59 @@ export default function MyPostingsPage() {
     },
     onSuccess: (data, variables) => {
       if (data?.debug?.wpErrors?.length > 0) {
-          toast.error(`WordPress failed to delete: ${data.debug.wpErrors[0]}`);
+          console.error("WordPress manage-posting debug", data.debug);
+          setManageResult({
+            status: "error",
+            title: "WordPress update failed",
+            detail: formatWpDebugError(data.debug.wpErrors[0]),
+          });
       } else if (data?.debug?.logsFound === 0) {
-          toast.warning("Deleted locally, but NO WordPress log was found in database!");
-      } else if (variables.action === 'delete') {
-          toast.success("Job posting deleted");
+          setManageResult({
+            status: "warning",
+            title: "Updated with limited verification",
+            detail: "The posting was updated locally, but no WordPress publishing log was found for this posting.",
+          });
       }
-      else if (variables.action === 'close') toast.success("Job posting closed");
-      else toast.success("Job marked as fulfilled");
+      else if (variables.action === 'close') {
+        setManageResult({
+          status: "success",
+          title: "Posting moved to draft",
+          detail: "The posting was moved to draft locally and the WordPress listing was updated successfully.",
+        });
+      }
+      else if (variables.action === 'delete') {
+        setManageResult({
+          status: "success",
+          title: "Posting deleted permanently",
+          detail: "The posting was permanently deleted from the dashboard, related local records were removed, and the linked WordPress listing was deleted.",
+        });
+      }
+      else if (variables.action === 'relist') {
+        setManageResult({
+          status: "success",
+          title: "Posting relisted",
+          detail: "The posting is live again and the linked WordPress listing was republished successfully.",
+        });
+      }
+      else {
+        setManageResult({
+          status: "success",
+          title: "Posting fulfilled",
+          detail: "The posting was marked as fulfilled and the linked WordPress listing was moved to draft.",
+        });
+      }
       
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
-      setConfirmManage(null);
+      queryClient.invalidateQueries({ queryKey: ['activityLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['applicants'] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      setManageResult({
+        status: "error",
+        title: "Update failed",
+        detail: e.message,
+      });
+    },
   });
 
   if (isLoading) {
@@ -102,7 +193,7 @@ export default function MyPostingsPage() {
     );
   }
 
-  const filteredPostings = (postings ?? []).filter((posting: any) => {
+  const filteredPostings = [...(postings ?? [])].sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).filter((posting: any) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [
       posting.title,
@@ -116,6 +207,13 @@ export default function MyPostingsPage() {
 
     return matchesSearch && matchesStatus;
   });
+
+  const applicantCounts = (applicants ?? []).reduce((acc: Record<string, number>, applicant: any) => {
+    if (!applicant.jobPostingId) return acc;
+    const key = String(applicant.jobPostingId);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="w-full">
@@ -138,6 +236,8 @@ export default function MyPostingsPage() {
             <SelectContent>
               <SelectItem value="all">All status</SelectItem>
               <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="fulfilled">Fulfilled</SelectItem>
             </SelectContent>
           </Select>
@@ -198,32 +298,25 @@ export default function MyPostingsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{posting.title}</h3>
-                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                          {posting.status === "open" ? <Circle className="w-3 h-3 mr-1" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
-                          {posting.status === "open" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status}
+                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" || posting.status === "active" ? "bg-blue-50 text-blue-700 border-blue-200" : posting.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                          {posting.status === "open" || posting.status === "active" ? <Circle className="w-3 h-3 mr-1" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
+                          {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
                         </Badge>
                       </div>
                       
-                      {posting.salaryRange && (
-                        <p className="text-sm font-medium text-slate-500 mt-1">{posting.salaryRange}</p>
-                      )}
-
-                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-                        <span>Active on:</span>
-                        <Badge variant="outline" className="rounded-full px-2.5 py-0.5 border-slate-200 bg-slate-50 text-slate-700 font-medium text-xs">
-                          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453" alt="WordPress" className="w-3.5 h-3.5 mr-1.5" />
-                          WordPress
-                        </Badge>
-                      </div>
-
-                      <div className="mt-2 flex items-center gap-4 text-sm text-slate-400">
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5" />
-                          Posted {posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "recently"}
-                        </span>
+                      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                        {posting.salaryRange && (
+                          <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-sm font-semibold text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+                            {posting.salaryRange}
+                          </div>
+                        )}
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+                          <Clock className="h-3.5 w-3.5 text-slate-400" />
+                          <span>{posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "Posted recently"}</span>
+                        </div>
                         {posting.fulfilledAt && (
-                          <span className="flex items-center gap-1.5 text-emerald-600">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-sm font-medium text-emerald-700 shadow-[0_6px_16px_rgba(16,185,129,0.08)]">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
                             Fulfilled {format(new Date(posting.fulfilledAt), "MMM d, yyyy")}
                           </span>
                         )}
@@ -233,9 +326,14 @@ export default function MyPostingsPage() {
 
                   {/* Actions dropdown */}
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="ghost" size="sm" className="h-8 text-slate-500 hover:text-slate-700">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setLocation(`/applicants?posting=${posting.id}`)}
+                      className="h-8 text-slate-500 hover:text-slate-700"
+                    >
                       <Users className="w-4 h-4 mr-1.5" />
-                      Applicants
+                      {applicantCounts[String(posting.id)] || 0} Applicant{(applicantCounts[String(posting.id)] || 0) === 1 ? "" : "s"}
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -244,35 +342,51 @@ export default function MyPostingsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem
-                          onClick={() => setConfirmManage({ id: posting.id, action: 'fulfill' })}
-                          className="text-emerald-700 focus:text-emerald-700 cursor-pointer"
-                        >
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Mark as Fulfilled
-                        </DropdownMenuItem>
+                        {(posting.status === 'open' || posting.status === 'active') && (
+                          <DropdownMenuItem
+                            onClick={() => setConfirmManage({ id: posting.id, action: 'fulfill' })}
+                            className="text-emerald-700 focus:text-emerald-700 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Mark as Fulfilled
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem 
                           onClick={() => setConfirmManage({ id: posting.id, action: 'close' })}
                           className="text-amber-700 focus:text-amber-700 cursor-pointer"
                         >
                           <XCircle className="w-4 h-4 mr-2" />
-                          Close Posting
+                          Put in Draft
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          onClick={() => setConfirmManage({ id: posting.id, action: 'delete' })}
-                          className="text-rose-600 focus:text-rose-600 cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete Posting
-                        </DropdownMenuItem>
+                        {(posting.status === 'draft' || posting.status === 'fulfilled') && (
+                          <DropdownMenuItem
+                            onClick={() => setConfirmManage({ id: posting.id, action: 'relist' })}
+                            className="text-sky-700 focus:text-sky-700 cursor-pointer"
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Relist Posting
+                          </DropdownMenuItem>
+                        )}
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => setConfirmManage({ id: posting.id, action: 'delete' })}
+                            className="text-rose-700 focus:text-rose-700 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Posting
+                          </DropdownMenuItem>
+                        </>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 </div>
 
                 {posting.description && (
-                  <p className="mt-4 line-clamp-4 min-h-[6rem] text-sm leading-6 text-slate-500">{posting.description}</p>
+                  <div className="mt-5 rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,0.98))] p-4">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Preview</p>
+                    <p className="line-clamp-4 min-h-[6rem] text-sm leading-7 text-slate-600">{posting.description}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -282,33 +396,102 @@ export default function MyPostingsPage() {
 
       <AlertDialog open={confirmManage !== null} onOpenChange={(open) => !open && setConfirmManage(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmManage?.action === 'delete' ? "Delete Posting?" : 
-               confirmManage?.action === 'close' ? "Close Posting?" : "Mark as Fulfilled?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmManage?.action === 'delete' 
-                ? "This will permanently delete the posting from the database and remove it entirely from WordPress. This action cannot be undone." 
-                : "This will update the posting's status locally and switch the live WordPress post to a draft to hide it from the public."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={
-                confirmManage?.action === 'delete' ? "bg-rose-600 hover:bg-rose-700 text-white" :
-                confirmManage?.action === 'close' ? "bg-amber-600 hover:bg-amber-700 text-white" :
-                "bg-emerald-600 hover:bg-emerald-700 text-white"
-              }
-              onClick={() => confirmManage !== null && managePostingMutation.mutate(confirmManage)}
-              disabled={managePostingMutation.isPending}
-            >
-              {managePostingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {confirmManage?.action === 'delete' ? "Delete" : 
-               confirmManage?.action === 'close' ? "Close" : "Mark Fulfilled"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          {managePostingMutation.isPending ? (
+            <div className="py-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+                <div className="flex-1">
+                  <AlertDialogTitle className="text-left">
+                    {confirmManage?.action === 'close' ? "Moving posting to draft" :
+                     confirmManage?.action === 'delete' ? "Deleting posting permanently" :
+                     confirmManage?.action === 'relist' ? "Relisting posting" : "Marking posting as fulfilled"}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="mt-2 text-left">
+                    Updating the local record and syncing the linked WordPress listing now.
+                  </AlertDialogDescription>
+                </div>
+              </div>
+            </div>
+          ) : manageResult ? (
+            <>
+              <AlertDialogHeader>
+                <div className="flex items-start gap-4">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                    manageResult.status === "success"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : manageResult.status === "warning"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-rose-100 text-rose-700"
+                  }`}>
+                    {manageResult.status === "success" ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : manageResult.status === "warning" ? (
+                      <AlertTriangle className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <AlertDialogTitle className="text-left">{manageResult.title}</AlertDialogTitle>
+                    <AlertDialogDescription className="mt-2 text-left">
+                      {manageResult.detail}
+                    </AlertDialogDescription>
+                  </div>
+                </div>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <Button
+                  className="bg-slate-950 text-white hover:bg-slate-800"
+                  onClick={() => {
+                    setManageResult(null);
+                    setConfirmManage(null);
+                  }}
+                >
+                  Continue
+                </Button>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {confirmManage?.action === 'close' ? "Move Posting to Draft?" :
+                   confirmManage?.action === 'delete' ? "Delete Posting Permanently?" :
+                   confirmManage?.action === 'relist' ? "Relist Posting?" : "Mark as Fulfilled?"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {confirmManage?.action === 'close'
+                    ? "This will move the posting to draft locally and update the WordPress listing to draft as well."
+                    : confirmManage?.action === 'delete'
+                      ? "This will permanently delete the posting from the dashboard, remove related local records, and permanently delete the linked WordPress listing."
+                    : confirmManage?.action === 'relist'
+                      ? "This will relist the posting locally and republish the linked WordPress listing."
+                      : "This will mark the posting as fulfilled locally and move the WordPress listing to draft."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <Button
+                  className={
+                    confirmManage?.action === 'close' ? "bg-amber-600 hover:bg-amber-700 text-white" :
+                    confirmManage?.action === 'delete' ? "bg-rose-600 hover:bg-rose-700 text-white" :
+                    confirmManage?.action === 'relist' ? "bg-sky-600 hover:bg-sky-700 text-white" :
+                    "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  }
+                  onClick={() => {
+                    setManageResult(null);
+                    confirmManage !== null && managePostingMutation.mutate(confirmManage);
+                  }}
+                >
+                  {confirmManage?.action === 'close' ? "Move to Draft" :
+                   confirmManage?.action === 'delete' ? "Delete Permanently" :
+                   confirmManage?.action === 'relist' ? "Relist" : "Mark Fulfilled"}
+                </Button>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </div>

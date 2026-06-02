@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const companyOverviewTemplate =
+  "247labs is a leading software development company headquartered in Toronto, Canada. We specialize in providing custom software solutions, mobile app development, web development, and digital transformation services to clients across various industries. Our team of experienced professionals is dedicated to delivering innovative, high-quality solutions that drive business growth and exceed client expectations.";
+
+const positionOverviewTemplate =
+  "Position Overview:\nWe are seeking a Full Stack Developer to join 247 Labs and help design, develop, and maintain scalable end-to-end web applications.";
+
 function getAiConfig() {
   const provider = (Deno.env.get("AI_PROVIDER") ?? "groq").toLowerCase();
 
@@ -75,7 +81,7 @@ serve(async (req) => {
       {
         role: "system",
         content:
-          "You are an expert HR writer for 247 Labs. Generate a professional reusable job template. Return only valid JSON with keys: title, category, description, requirements, salaryRange.",
+          "You are an expert HR writer for 247 Labs. Generate a professional reusable job template that is ready for the WordPress posting mapper. Return only valid JSON with keys: title, category, description, requirements, salaryRange.",
       },
       {
         role: "user",
@@ -84,12 +90,40 @@ serve(async (req) => {
 
 Rules:
 - company is 247 Labs in Toronto
-- write a polished realistic job description
-- include responsibilities and qualifications
+- write a polished realistic job description aligned to how our WordPress job page is structured
 - choose a sensible category
 - include a salary range string in CAD if possible
-- requirements should be plain text, suitable for saving in a template
-- description should be ready to post
+- description must be plain text and ready to post
+- requirements must be plain text and ready to post
+- CRITICAL: DO NOT use any markdown formatting whatsoever (no **, no ##). Use plain text with ALL CAPS for section headers and standard newlines.
+- IMPORTANT: generate content that maps cleanly into these WordPress fields:
+  1. company_overview
+  2. position_overview
+  3. key_responsibilities
+  4. what_we_offer
+  5. qualifications
+  6. nice_to_have
+  7. additional_information
+  8. join_our_team
+- description must contain only these two sections, in this order:
+  COMPANY OVERVIEW:
+  ${companyOverviewTemplate}
+
+  POSITION OVERVIEW:
+  Write a role-specific overview using this style as a model, but adapt it to the requested job:
+  ${positionOverviewTemplate}
+- requirements must contain only these sections, in this order:
+  KEY RESPONSIBILITIES:
+  WHAT WE OFFER:
+  QUALIFICATIONS:
+  NICE TO HAVE:
+  ADDITIONAL INFORMATION:
+  JOIN OUR TEAM:
+- Put each item in KEY RESPONSIBILITIES, WHAT WE OFFER, QUALIFICATIONS, and NICE TO HAVE on its own line starting with "- ".
+- DO NOT repeat the same content across sections.
+- DO NOT put responsibilities or qualifications inside POSITION OVERVIEW.
+- DO NOT put salary inside ADDITIONAL INFORMATION. Salary belongs only in salaryRange.
+- JOIN OUR TEAM must be a short closing CTA tailored to the role and 247labs.
 - output JSON only`,
       },
     ];

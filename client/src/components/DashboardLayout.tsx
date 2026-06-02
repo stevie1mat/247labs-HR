@@ -58,7 +58,11 @@ const hrAdminItems = [
 
 const distributionItems = [
   { icon: Globe, label: "Posting Sources", path: "/sources" },
-  { icon: ScrollText, label: "Posting Logs", path: "/logs" },
+];
+
+const logsItems = [
+  { icon: FileText, label: "Job Posting Logs", path: "/posting-logs" },
+  { icon: ScrollText, label: "Activity Logs", path: "/logs" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width-v2";
@@ -185,6 +189,7 @@ function DashboardLayoutContent({
     ...hiringManagerItems,
     ...(isAdmin ? hrAdminItems : []),
     ...(isAdmin ? distributionItems : []),
+    ...(isAdmin ? logsItems : []),
   ];
   const activeMenuItem = allItems.find(item => item.path === location);
 
@@ -309,31 +314,59 @@ function DashboardLayoutContent({
             </SidebarGroup>
 
             {isAdmin && (
-              <SidebarGroup className="mt-2">
-                {!isCollapsed && (
-                  <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
-                    Distribution
-                  </SidebarGroupLabel>
-                )}
-                <SidebarMenu className="px-2">
-                  {distributionItems.map(item => {
-                    const isActive = location === item.path;
-                    return (
-                      <SidebarMenuItem key={item.path}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={() => setLocation(item.path)}
-                          tooltip={item.label}
-                          className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
-                        >
-                          <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
-                          <span className="text-base">{item.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroup>
+              <>
+                <SidebarGroup className="mt-2">
+                  {!isCollapsed && (
+                    <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
+                      Distribution
+                    </SidebarGroupLabel>
+                  )}
+                  <SidebarMenu className="px-2">
+                    {distributionItems.map(item => {
+                      const isActive = location === item.path;
+                      return (
+                        <SidebarMenuItem key={item.path}>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            onClick={() => setLocation(item.path)}
+                            tooltip={item.label}
+                            className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
+                          >
+                            <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                            <span className="text-base">{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroup>
+
+                <SidebarGroup className="mt-2">
+                  {!isCollapsed && (
+                    <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 px-4 mb-1">
+                      Logs
+                    </SidebarGroupLabel>
+                  )}
+                  <SidebarMenu className="px-2">
+                    {logsItems.map(item => {
+                      const isActive = location === item.path;
+                      return (
+                        <SidebarMenuItem key={item.path}>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            onClick={() => setLocation(item.path)}
+                            tooltip={item.label}
+                            className={`h-11 transition-all font-medium ${isActive ? "bg-primary/15 text-primary" : "text-sidebar-foreground/80 hover:text-sidebar-foreground"}`}
+                          >
+                            <item.icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                            <span className="text-base">{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </>
             )}
           </SidebarContent>
         </Sidebar>

@@ -4,24 +4,51 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   BarChart3,
   Briefcase,
   CheckCircle2,
   Circle,
   Clock,
   Loader2,
+  MoveUpRight,
   TrendingUp,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const platformIcons: Record<string, string> = { linkedin: "🔵", upwork: "🟢", indeed: "🔴", other: "⚫" };
-const platformLabels: Record<string, string> = { linkedin: "LinkedIn", upwork: "Upwork", indeed: "Indeed", other: "Other" };
-const chartColors = ["#7c3aed", "#14b8a6", "#f97316", "#0f172a"];
+const platformIcons: Record<string, string> = {
+  linkedin: "in",
+  wordpress: "wp",
+  wellfound: "wf",
+  remotive: "rm",
+  upwork: "up",
+  indeed: "id",
+  dubizzle_jobs_uae: "du",
+  other: "ot",
+};
+const platformLabels: Record<string, string> = {
+  linkedin: "LinkedIn",
+  wordpress: "WordPress",
+  wellfound: "Wellfound",
+  remotive: "Remotive",
+  upwork: "Upwork",
+  indeed: "Indeed",
+  dubizzle_jobs_uae: "Dubizzle Jobs",
+  other: "Other",
+};
+const chartColors = ["#8b5cf6", "#10b981", "#ef4444", "#f59e0b", "#0f172a"];
 
 function formatDays(value: number | null) {
-  return value != null ? `${value}d` : "—";
+  return `${value ?? 0}d`;
 }
 
 function getPostingAgeDays(postedAt?: string | null, fulfilledAt?: string | null) {
@@ -30,30 +57,57 @@ function getPostingAgeDays(postedAt?: string | null, fulfilledAt?: string | null
   return Math.max(0, Math.round((end - new Date(postedAt).getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+function ageToneClass(days: number | null) {
+  if (days == null) return "text-slate-400";
+  if (days <= 7) return "text-emerald-600";
+  if (days <= 14) return "text-sky-600";
+  return "text-amber-500";
+}
+
 export default function DashboardPage() {
   const queryClient = useQueryClient();
 
-  const { data: board, isLoading: boardLoading, refetch: refetchBoard } = useQuery({
+  const { data: board, isLoading: boardLoading } = useQuery({
     queryKey: ["hrBoard"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("jobPostings").select(`
-        id, title, status, salaryRange, createdAt, fulfilledAt,
-        jobPostingLogs ( platform, status )
-      `).order("createdAt", { ascending: false });
+      const [{ data: postings, error: postingsError }, { data: postingLogs, error: logsError }] = await Promise.all([
+        supabase
+          .from("jobPostings")
+          .select("id, title, status, salaryRange, createdAt, fulfilledAt")
+          .order("createdAt", { ascending: false }),
+        supabase
+          .from("jobPostingLogs")
+          .select("jobPostingId, platform, status"),
+      ]);
 
-      if (error) throw error;
+      if (postingsError) throw postingsError;
+      if (logsError) throw logsError;
 
-      return (data || []).map((posting: any) => ({
+      const successfulPlatformsByPosting = (postingLogs ?? []).reduce((acc: Record<string, string[]>, log: any) => {
+        if (log.status !== "success" || !log.jobPostingId || !log.platform) {
+          return acc;
+        }
+
+        if (!acc[log.jobPostingId]) {
+          acc[log.jobPostingId] = [];
+        }
+
+        if (!acc[log.jobPostingId].includes(log.platform)) {
+          acc[log.jobPostingId].push(log.platform);
+        }
+
+        return acc;
+      }, {});
+
+      return (postings || []).map((posting: any) => ({
         ...posting,
         postedAt: posting.createdAt,
-        platforms: Array.from(
-          new Set((posting.jobPostingLogs || []).filter((log: any) => log.status === "success").map((log: any) => log.platform))
-        ),
+        platforms: successfulPlatformsByPosting[posting.id] ?? [],
       }));
     },
   });
 
-  const { data: kpis, isLoading: kpisLoading, refetch: refetchKpis } = useQuery({
+  const { data: kpis, isLoading: kpisLoading } = useQuery({
     queryKey: ["kpis"],
     queryFn: async () => {
       const { data: postings, error } = await supabase.from("jobPostings").select("*");
@@ -79,15 +133,32 @@ export default function DashboardPage() {
 
   const markFulfilled = useMutation({
     mutationFn: async ({ id }: { id: number }) => {
-      const { error } = await supabase.from("jobPostings").update({
-        status: "fulfilled",
-        fulfilledAt: new Date().toISOString(),
-      }).eq("id", id);
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-posting`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ postingId: id, action: "fulfill" }),
+      });
+
+      if (!res.ok) {
+        let errMessage = "Failed to update posting";
+        try {
+          const err = await res.json();
+          errMessage = err.error || errMessage;
+        } catch {}
+        throw new Error(errMessage);
+      }
+
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hrBoard"] });
       queryClient.invalidateQueries({ queryKey: ["kpis"] });
+      queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
       toast.success("Job marked as fulfilled!");
     },
   });
@@ -107,8 +178,6 @@ export default function DashboardPage() {
   const totalOpen = kpis?.totalOpen ?? 0;
   const totalFulfilled = kpis?.totalFulfilled ?? 0;
   const avgTimeToFill = kpis?.avgTimeToFill ?? null;
-  const activePlatforms = new Set(rows.flatMap((row: any) => row.platforms ?? [])).size;
-
   const platformCounts = rows.reduce((acc: Record<string, number>, row: any) => {
     (row.platforms ?? []).forEach((platform: string) => {
       acc[platform] = (acc[platform] ?? 0) + 1;
@@ -133,7 +202,15 @@ export default function DashboardPage() {
 
   const kpiCards = [
     {
-      title: "Open roles",
+      title: "Total Jobs Posted",
+      value: totalPostings.toString(),
+      caption: "All postings created in the pipeline",
+      iconWrap: "bg-violet-500/15 text-violet-700",
+      valueClass: "text-slate-950",
+      icon: Briefcase,
+    },
+    {
+      title: "Open Positions",
       value: totalOpen.toString(),
       caption: "Positions currently in market",
       iconWrap: "bg-sky-500/15 text-sky-700",
@@ -141,7 +218,7 @@ export default function DashboardPage() {
       icon: Circle,
     },
     {
-      title: "Roles filled",
+      title: "Fulfilled",
       value: totalFulfilled.toString(),
       caption: "Closed successfully",
       iconWrap: "bg-emerald-500/15 text-emerald-700",
@@ -149,20 +226,12 @@ export default function DashboardPage() {
       icon: CheckCircle2,
     },
     {
-      title: "Average time to fill",
+      title: "Avg. Time to Fill",
       value: formatDays(avgTimeToFill),
       caption: "Measured across fulfilled postings",
       iconWrap: "bg-amber-500/15 text-amber-700",
       valueClass: "text-slate-950",
       icon: Clock,
-    },
-    {
-      title: "Distribution reach",
-      value: activePlatforms.toString(),
-      caption: "Channels posting successfully",
-      iconWrap: "bg-violet-500/15 text-violet-700",
-      valueClass: "text-slate-950",
-      icon: TrendingUp,
     },
   ];
 
@@ -181,9 +250,7 @@ export default function DashboardPage() {
                   <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${card.iconWrap}`}>
                     <Icon className="h-5 w-5" />
                   </div>
-                  <Badge variant="outline" className="rounded-lg border-slate-200/80 bg-white/70 px-2.5 py-1 text-[11px] text-slate-500">
-                    Live
-                  </Badge>
+                  <MoveUpRight className="h-4 w-4 text-slate-300" />
                 </div>
                 <div className="mt-8">
                   <p className="text-sm font-medium text-slate-500">{card.title}</p>
@@ -204,8 +271,8 @@ export default function DashboardPage() {
                 <BarChart3 className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-lg font-semibold text-slate-950">Posting cadence</CardTitle>
-                <p className="mt-1 text-sm text-slate-500">Open and fulfilled job volume by month</p>
+                <CardTitle className="text-lg font-semibold text-slate-950">Monthly Job Postings</CardTitle>
+                <p className="mt-1 text-sm text-slate-500">Created and fulfilled job volume by month</p>
               </div>
             </div>
           </CardHeader>
@@ -234,9 +301,9 @@ export default function DashboardPage() {
                       boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
                     }}
                   />
-                  <Bar dataKey="open" name="Open" fill="url(#dashboardOpenBar)" radius={[12, 12, 4, 4]} />
-                  <Bar dataKey="fulfilled" name="Fulfilled" fill="url(#dashboardFulfilledBar)" radius={[12, 12, 4, 4]} />
-                </BarChart>
+                    <Bar dataKey="open" name="Open" fill="url(#dashboardOpenBar)" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="fulfilled" name="Fulfilled" fill="url(#dashboardFulfilledBar)" radius={[8, 8, 0, 0]} />
+                  </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-sm text-slate-500">
@@ -253,7 +320,7 @@ export default function DashboardPage() {
                 <TrendingUp className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-lg font-semibold text-slate-950">Channel mix</CardTitle>
+                <CardTitle className="text-lg font-semibold text-slate-950">Distribution by Platform</CardTitle>
                 <p className="mt-1 text-sm text-slate-500">Which platforms are carrying your distribution</p>
               </div>
             </div>
@@ -313,20 +380,7 @@ export default function DashboardPage() {
 
       <section className="overflow-hidden rounded-xl border border-white/70 bg-white/88 shadow-[0_18px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl">
         <div className="border-b border-slate-200/70 px-6 py-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/12 text-violet-700">
-                <Briefcase className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">HR board</h2>
-                <p className="mt-1 text-sm text-slate-500">Every posting, status signal, and fulfillment action in one sleek view</p>
-              </div>
-            </div>
-            <Badge variant="outline" className="w-fit rounded-lg border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
-              {rows.length} tracked posting{rows.length === 1 ? "" : "s"}
-            </Badge>
-          </div>
+          <h2 className="text-lg font-semibold text-slate-950">HR Board — All Job Postings</h2>
         </div>
 
         {rows.length === 0 ? (
@@ -340,106 +394,99 @@ export default function DashboardPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 p-4 md:p-6">
-            {rows.map((row: any) => {
-              const timeToFill = getPostingAgeDays(row.postedAt, row.fulfilledAt);
-              const isOpen = row.status === "open";
-              const isFulfilled = row.status === "fulfilled";
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-200 bg-slate-50/80 hover:bg-slate-50/80">
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Job Title</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Date Posted</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Platforms</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Days Since Posted</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Time to Fill</TableHead>
+                <TableHead className="px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row: any) => {
+                const daysSincePosted = getPostingAgeDays(row.postedAt, null);
+                const timeToFill = row.status === "fulfilled" ? getPostingAgeDays(row.postedAt, row.fulfilledAt) : null;
+                const isOpen = row.status === "open" || row.status === "active";
+                const statusLabel = isOpen ? "Open" : row.status === "fulfilled" ? "Fulfilled" : row.status;
 
-              return (
-                <div
-                  key={row.id}
-                  className="group rounded-xl border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))] p-5 transition-all duration-300 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
-                >
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-lg font-semibold tracking-[-0.02em] text-slate-950">{row.title}</h3>
-                        {isFulfilled ? (
-                          <Badge className="rounded-lg border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
-                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                            Fulfilled
-                          </Badge>
-                        ) : isOpen ? (
-                          <Badge className="rounded-lg border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
-                            <Circle className="mr-1 h-3.5 w-3.5" />
-                            Open
-                          </Badge>
-                        ) : (
-                          <Badge className="rounded-lg border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">
-                            {row.status}
-                          </Badge>
-                        )}
+                return (
+                  <TableRow key={row.id} className="border-slate-200">
+                    <TableCell className="px-5 py-4 align-top">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-950">{row.title}</p>
+                        <p className="mt-1 text-sm text-slate-400">{row.salaryRange || "—"}</p>
                       </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                          Posted {row.postedAt ? format(new Date(row.postedAt), "MMM d, yyyy") : "—"}
-                        </div>
-                        {row.salaryRange && (
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                            {row.salaryRange}
-                          </div>
-                        )}
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                          {timeToFill != null ? `${timeToFill} day${timeToFill === 1 ? "" : "s"}` : "No time data"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {isOpen && (
-                      <Button
-                        variant="outline"
-                        onClick={() => markFulfilled.mutate({ id: row.id })}
-                        disabled={markFulfilled.isPending}
-                        className="h-11 rounded-xl border-emerald-200 bg-emerald-50 px-5 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
-                      >
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        Mark fulfilled
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_220px]">
-                    <div className="rounded-xl border border-slate-200/70 bg-white/80 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Distribution footprint</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      <p className="text-sm text-slate-700">{row.postedAt ? format(new Date(row.postedAt), "MMM d, yyyy") : "—"}</p>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      <div className="flex flex-wrap gap-2">
                         {(row.platforms ?? []).length > 0 ? (
-                          (row.platforms ?? []).map((platform: string) => (
+                          row.platforms.map((platform: string) => (
                             <div
                               key={platform}
-                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700"
+                              title={platformLabels[platform] ?? platform}
+                              className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold uppercase text-slate-600"
                             >
-                              <span>{platformIcons[platform] ?? "⚫"}</span>
-                              <span>{platformLabels[platform] ?? platform}</span>
+                              {platformIcons[platform] ?? platform.slice(0, 2)}
                             </div>
                           ))
                         ) : (
-                          <p className="text-sm text-slate-400">No successful platform posts recorded yet.</p>
+                          <span className="text-sm text-slate-400">—</span>
                         )}
                       </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200/70 bg-slate-950 p-4 text-white">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Status insight</p>
-                      <p className="mt-3 text-base font-semibold">
-                        {isFulfilled
-                          ? `Filled in ${timeToFill ?? 0} day${timeToFill === 1 ? "" : "s"}`
-                          : isOpen
-                            ? `${timeToFill ?? 0} day${timeToFill === 1 ? "" : "s"} live`
-                            : "Awaiting update"}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-300">
-                        {isFulfilled
-                          ? "This role has completed the hiring cycle and contributes to fulfillment performance."
-                          : "This role is still active. Use this board to spot which openings may need renewed distribution."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      {statusLabel === "Fulfilled" ? (
+                        <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                          Fulfilled
+                        </Badge>
+                      ) : statusLabel === "Open" ? (
+                        <Badge className="rounded-full border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
+                          <Circle className="mr-1 h-3.5 w-3.5" />
+                          Open
+                        </Badge>
+                      ) : (
+                        <Badge className="rounded-full border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">
+                          {statusLabel}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      <div className={`flex items-center gap-1.5 text-sm font-medium ${ageToneClass(daysSincePosted)}`}>
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatDays(daysSincePosted)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      <p className="text-sm font-medium text-slate-700">{row.status === "fulfilled" ? formatDays(timeToFill) : "—"}</p>
+                    </TableCell>
+                    <TableCell className="px-5 py-4 align-top">
+                      {isOpen ? (
+                        <Button
+                          variant="ghost"
+                          onClick={() => markFulfilled.mutate({ id: row.id })}
+                          disabled={markFulfilled.isPending}
+                          className="h-auto p-0 text-sm font-medium text-slate-900 hover:bg-transparent hover:text-slate-950"
+                        >
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Mark Fulfilled
+                        </Button>
+                      ) : (
+                        <span className="text-sm text-slate-400">Complete</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
       </section>
     </div>

@@ -8,7 +8,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!loading && user) {
-      setLocation("/hire");
+      setLocation("/dashboard");
     }
   }, [user, loading, setLocation]);
 

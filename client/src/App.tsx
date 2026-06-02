@@ -11,6 +11,8 @@ import ApplicantsPage from "./pages/ApplicantsPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SourcesPage from "./pages/SourcesPage";
 import LogsPage from "./pages/LogsPage";
+import PostingLogsPage from "./pages/PostingLogsPage";
+import ComponentShowcase from "./pages/ComponentShowcase";
 import HomePage from "./pages/Home";
 
 import { AuthPage } from "./pages/AuthPage";
@@ -29,7 +31,8 @@ function Router() {
             <Route path="/templates" component={TemplatesPage} />
             <Route path="/sources" component={SourcesPage} />
             <Route path="/logs" component={LogsPage} />
-            <Route path="/404" component={NotFound} />
+            <Route path="/posting-logs" component={PostingLogsPage} />
+            <Route path="/components" component={ComponentShowcase} />
             <Route component={NotFound} />
           </Switch>
         </DashboardLayout>

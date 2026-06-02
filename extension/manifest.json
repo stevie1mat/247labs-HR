@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "247Labs Job Poster",
+  "version": "1.0",
+  "description": "Automatically posts jobs from your dashboard to platforms like Wellfound and Remotive.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:5173/*",
+    "https://two47labs-hr.onrender.com/*",
+    "https://*.linkedin.com/*",
+    "https://*.indeed.com/*",
+    "https://*.wellfound.com/*",
+    "https://*.remotive.com/*",
+    "https://*.ziprecruiter.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "https://two47labs-hr.onrender.com/*"
+      ],
+      "js": ["content_dashboard.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "247Labs Job Poster"
+  }
+}
