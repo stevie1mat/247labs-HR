@@ -84,10 +84,10 @@ export default function TemplatesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showDialog, setShowDialog] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingTemplate, setViewingTemplate] = useState<any | null>(null);
-  const [postingTemplateId, setPostingTemplateId] = useState<number | null>(null);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<number[]>([]);
+  const [postingTemplateId, setPostingTemplateId] = useState<string | null>(null);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [postSuccessTitle, setPostSuccessTitle] = useState<string | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateStep, setGenerateStep] = useState<1 | 2 | 3>(1);
@@ -198,7 +198,7 @@ export default function TemplatesPage() {
   });
 
   const postFromTemplate = useMutation({
-    mutationFn: async ({ templateId, sourceIds }: { templateId: number; sourceIds?: number[] }) => {
+    mutationFn: async ({ templateId, sourceIds }: { templateId: string; sourceIds?: string[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
       
       // Dispatch event to the Desktop App or Chrome Extension
@@ -366,12 +366,12 @@ export default function TemplatesPage() {
     setShowDialog(true);
   };
 
-  const openPostDialog = (templateId: number) => {
+  const openPostDialog = (templateId: string) => {
     setPostingTemplateId(templateId);
     setSelectedSourceIds((sources ?? []).filter((source: any) => source.isActive).map((source: any) => source.id));
   };
 
-  const toggleSelectedSource = (sourceId: number) => {
+  const toggleSelectedSource = (sourceId: string) => {
     const source = (sources ?? []).find((item: any) => item.id === sourceId);
     if (!source?.isActive) return;
 

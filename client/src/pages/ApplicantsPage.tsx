@@ -15,7 +15,7 @@ import {
 import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 const sourceBadgeMap: Record<string, string> = {
   elementor: "WordPress",
@@ -37,7 +37,6 @@ export default function ApplicantsPage() {
   const [evaluating, setEvaluating] = useState<Record<string, boolean>>({});
   
   const queryClient = useQueryClient();
-  const { toast } = useToast();
 
   // Fetch job postings
   const { data: postings, isLoading: isLoadingPostings } = useQuery({
@@ -114,19 +113,12 @@ export default function ApplicantsPage() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      toast({
-        title: "Evaluation Complete",
-        description: "The applicant's resume has been successfully scanned.",
-      });
+      toast.success("The applicant's resume has been successfully scanned.");
       queryClient.invalidateQueries({ queryKey: ['applicants'] });
       queryClient.invalidateQueries({ queryKey: ['activityLogs'] });
     } catch (err: any) {
       console.error(err);
-      toast({
-        title: "Evaluation Failed",
-        description: err.message || "Failed to evaluate the applicant.",
-        variant: "destructive"
-      });
+      toast.error(err.message || "Failed to evaluate the applicant.");
     } finally {
       setEvaluating((prev) => ({ ...prev, [applicantId]: false }));
     }

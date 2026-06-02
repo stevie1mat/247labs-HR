@@ -295,7 +295,7 @@ serve(async (req) => {
             
         if (!template) throw new Error("Template not found");
 
-        const { data: newPosting } = await supabaseClient.from('jobPostings').insert({
+        const { data: newPosting, error: postingInsertError } = await supabaseAdmin.from('jobPostings').insert({
             templateId,
             title: template.title,
             description: template.description,
@@ -304,6 +304,11 @@ serve(async (req) => {
             status: 'active',
             postedById: user.id
         }).select().single();
+
+        if (postingInsertError || !newPosting) {
+          throw new Error(`Failed to create local job posting: ${postingInsertError?.message || "No posting returned"}`);
+        }
+
         posting = newPosting;
 
         await logActivity(supabaseAdmin, {

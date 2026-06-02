@@ -36,10 +36,16 @@ import {
 import { useLocation } from "wouter";
 import { formatDistanceToNow, format } from "date-fns";
 
+const platformIcons: Record<string, string> = {
+  linkedin: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/LinkedIn_icon.svg/1280px-LinkedIn_icon.svg.png",
+  indeed: "https://upload.wikimedia.org/wikipedia/commons/f/fc/Indeed_logo.svg",
+  wordpress: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453",
+};
+
 export default function MyPostingsPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
-  const [confirmManage, setConfirmManage] = useState<{id: number, action: 'fulfill' | 'close' | 'relist' | 'delete'} | null>(null);
+  const [confirmManage, setConfirmManage] = useState<{id: string, action: 'fulfill' | 'close' | 'relist' | 'delete'} | null>(null);
   const [manageResult, setManageResult] = useState<{
     status: "success" | "warning" | "error";
     title: string;
@@ -52,13 +58,47 @@ export default function MyPostingsPage() {
   const { data: postings, isLoading } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: async () => {
-        const { data, error } = await supabase.from('jobPostings').select('*').order('createdAt', { ascending: false });
+        const { data, error } = await supabase
+          .from('jobPostings')
+          .select('*')
+          .order('createdAt', { ascending: false });
 
         if (error) throw error;
+
+        const postingIds = (data ?? []).map((posting: any) => posting.id).filter(Boolean);
+        let logs: any[] = [];
+
+        if (postingIds.length) {
+          const [{ data: logsByJobPostingId, error: jobPostingLogError }, { data: logsByPostingId, error: postingLogError }] =
+            await Promise.all([
+              supabase
+                .from('jobPostingLogs')
+                .select('jobPostingId, postingId, platform')
+                .in('jobPostingId', postingIds),
+              supabase
+                .from('jobPostingLogs')
+                .select('jobPostingId, postingId, platform')
+                .in('postingId', postingIds),
+            ]);
+
+          if (jobPostingLogError) throw jobPostingLogError;
+          if (postingLogError) throw postingLogError;
+
+          logs = [...(logsByJobPostingId ?? []), ...(logsByPostingId ?? [])];
+        }
+
+        const logsByPostingId = (logs ?? []).reduce((acc: Record<string, any[]>, log: any) => {
+          const id = String(log.jobPostingId || log.postingId || "");
+          if (!id) return acc;
+          acc[id] = acc[id] || [];
+          acc[id].push(log);
+          return acc;
+        }, {});
 
         return (data ?? []).map((posting: any) => ({
           ...posting,
           postedAt: posting.postedAt ?? posting.createdAt,
+          jobPostingLogs: logsByPostingId[String(posting.id)] ?? [],
         }));
     }
   });
@@ -107,7 +147,7 @@ export default function MyPostingsPage() {
   };
 
   const managePostingMutation = useMutation({
-    mutationFn: async ({ id, action }: { id: number, action: 'fulfill' | 'close' | 'relist' | 'delete' }) => {
+    mutationFn: async ({ id, action }: { id: string, action: 'fulfill' | 'close' | 'relist' | 'delete' }) => {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-posting`, {
             method: 'POST',
@@ -298,28 +338,6 @@ export default function MyPostingsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{posting.title}</h3>
-                        <Badge className={`rounded-lg text-xs font-medium ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" || posting.status === "active" ? "bg-blue-50 text-blue-700 border-blue-200" : posting.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                          {posting.status === "open" || posting.status === "active" ? <Circle className="w-3 h-3 mr-1" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
-                          {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
-                        </Badge>
-                      </div>
-                      
-                      <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                        {posting.salaryRange && (
-                          <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-sm font-semibold text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
-                            {posting.salaryRange}
-                          </div>
-                        )}
-                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
-                          <Clock className="h-3.5 w-3.5 text-slate-400" />
-                          <span>{posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "Posted recently"}</span>
-                        </div>
-                        {posting.fulfilledAt && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-sm font-medium text-emerald-700 shadow-[0_6px_16px_rgba(16,185,129,0.08)]">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Fulfilled {format(new Date(posting.fulfilledAt), "MMM d, yyyy")}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -381,6 +399,43 @@ export default function MyPostingsPage() {
                     </DropdownMenu>
                   </div>
                 </div>
+
+                {posting.salaryRange && (
+                  <div className="mt-4 text-sm font-semibold text-slate-600">
+                    {posting.salaryRange}
+                  </div>
+                )}
+
+                <div className="mt-4 flex items-center gap-2.5 overflow-x-auto pb-1">
+                  <Badge className={`h-9 shrink-0 rounded-full px-3.5 text-sm font-semibold ${posting.status === "fulfilled" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : posting.status === "open" || posting.status === "active" ? "bg-blue-50 text-blue-700 border-blue-200" : posting.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                    {posting.status === "open" || posting.status === "active" ? <Circle className="w-4 h-4 mr-1.5" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-4 h-4 mr-1.5" /> : <XCircle className="w-4 h-4 mr-1.5" />}
+                    {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
+                  </Badge>
+                  {posting.jobPostingLogs && posting.jobPostingLogs.length > 0 && Array.from(new Set(posting.jobPostingLogs.map((l: any) => l.platform).filter(Boolean))).map(platform => (
+                    <Badge
+                      key={platform as string}
+                      variant="outline"
+                      className="h-9 shrink-0 rounded-full border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 shadow-sm"
+                    >
+                      {platformIcons[platform as string] ? (
+                        <img src={platformIcons[platform as string]} alt={platform as string} className="h-4 w-4 shrink-0 object-contain" />
+                      ) : (
+                        <span className="text-xs font-semibold uppercase">{String(platform).slice(0, 2)}</span>
+                      )}
+                    </Badge>
+                  ))}
+                  <div className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+                    <Clock className="h-3.5 w-3.5 text-slate-400" />
+                    <span>{posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "Posted recently"}</span>
+                  </div>
+                </div>
+
+                {posting.fulfilledAt && (
+                  <div className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 shadow-[0_6px_16px_rgba(16,185,129,0.08)]">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>Fulfilled {format(new Date(posting.fulfilledAt), "MMM d, yyyy")}</span>
+                  </div>
+                )}
 
                 {posting.description && (
                   <div className="mt-5 rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,0.98))] p-4">
