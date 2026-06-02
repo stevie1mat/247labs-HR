@@ -1639,6 +1639,12 @@
     );
   }
 
+  function hasLinkedInServerError() {
+    return Boolean(
+      findTextNode(["sorry, something went wrong", "please try again"], "p, div, span")
+    );
+  }
+
   async function continueLinkedInDescriptionStep() {
     showControlBar("LinkedIn", "Committing description", "Waiting for LinkedIn to accept the pasted content");
     const continueButton = await waitForCondition(() => {
@@ -1655,10 +1661,29 @@
     clickElementLikeUser(button);
     
     // Wait up to 10 seconds for the step to transition or the button to disappear
-    await waitForCondition(() => {
+    const didTransition = await waitForCondition(() => {
+      if (hasLinkedInServerError()) {
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: detected a server error, reloading page to recover...",
+          status: "Reloading to recover from error...",
+        });
+        window.location.reload();
+        return true;
+      }
       const currentBtn = findLinkedInContinueButton();
       return !currentBtn || !isLinkedInGeneratedDescriptionStep();
     }, 10000, 500);
+
+    if (!didTransition) {
+      chrome.runtime.sendMessage({
+        type: "EXTENSION_LOG",
+        message: "LinkedIn: step did not transition, reloading page to force progress...",
+        status: "Reloading to recover...",
+      });
+      window.location.reload();
+      await new Promise(() => {});
+    }
 
     await sleep(1000);
     return true;
@@ -1783,7 +1808,8 @@
       }
 
       if (isLinkedInDescriptionReviewCard(jobData)) {
-        showControlBar("LinkedIn", "Accepting description", "Keeping LinkedIn's drafted description");
+        showControlBar("LinkedIn", "Writing job description", "Replacing LinkedIn's draft with our exact description");
+        await fillLinkedInDescriptionEditor(jobData);
         await continueLinkedInDescriptionStep();
         continue;
       }
@@ -1800,8 +1826,9 @@
       }
 
       if (isLinkedInGeneratedDescriptionStep()) {
-        showControlBar("LinkedIn", "Keeping drafted description", "Letting LinkedIn's AI handle the description for now");
+        showControlBar("LinkedIn", "Writing job description", "Replacing LinkedIn's AI draft with our exact description");
         await waitForLinkedInGeneratedDescription();
+        await fillLinkedInDescriptionEditor(jobData);
         const advancedDescription = await continueLinkedInDescriptionStep();
         if (advancedDescription) continue;
         await sleep(600);
@@ -1836,11 +1863,30 @@
       showControlBar("LinkedIn", "Advancing step", "Clicking Continue");
       clickElementLikeUser(continueButton);
       
-      await waitForCondition(() => {
+      const didTransition = await waitForCondition(() => {
         if (isAutomationStopped) throw new Error("AUTOMATION_STOPPED");
+        if (hasLinkedInServerError()) {
+          chrome.runtime.sendMessage({
+            type: "EXTENSION_LOG",
+            message: "LinkedIn: detected a server error, reloading page to recover...",
+            status: "Reloading to recover from error...",
+          });
+          window.location.reload();
+          return true;
+        }
         const btn = findLinkedInContinueButton();
         return !btn || btn !== continueButton;
       }, 10000, 500);
+
+      if (!didTransition) {
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: step did not transition, reloading page to force progress...",
+          status: "Reloading to recover...",
+        });
+        window.location.reload();
+        await new Promise(() => {});
+      }
       
       await sleep(1000);
     }
