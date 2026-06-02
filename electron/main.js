@@ -135,7 +135,7 @@ Instructions:
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": "Bearer ***REMOVED***"
+          "Authorization": `Bearer ${process.env.MISTRAL_API_KEY || ""}`
         },
         body: JSON.stringify({
           model: "mistral-large-latest",
