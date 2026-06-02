@@ -36,6 +36,7 @@ import {
   ScrollText,
   Zap,
   Users,
+  Chrome,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -63,6 +64,7 @@ const distributionItems = [
 const logsItems = [
   { icon: FileText, label: "Job Posting Logs", path: "/posting-logs" },
   { icon: ScrollText, label: "Activity Logs", path: "/logs" },
+  { icon: Chrome, label: "Browser Extension", path: "/extension-install" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width-v2";
