@@ -8,6 +8,7 @@
   const PREVIEW_ROOT_ID = "__247labs_extension_preview__";
   const CONTROL_BAR_ID = "__247labs_extension_control_bar__";
   const STYLE_ID = "__247labs_extension_preview_styles__";
+  let isAutomationStopped = false;
 
   const PLATFORM_PROFILES = {
     linkedin: {
@@ -556,6 +557,14 @@
         })
       );
     });
+    
+    // Fallback to native click if the events didn't trigger React's synthetic event system properly
+    try {
+      clickable.click();
+    } catch (e) {
+      // Ignore
+    }
+    
     return true;
   }
 
@@ -563,6 +572,7 @@
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
+      if (isAutomationStopped) throw new Error("AUTOMATION_STOPPED");
       const result = check();
       if (result) return result;
       await sleep(intervalMs);
@@ -1642,8 +1652,7 @@
 
     showControlBar("LinkedIn", "Advancing step", "Clicking Continue after the description was accepted");
     
-    // Just use a native click, no extra fake events
-    button.click();
+    clickElementLikeUser(button);
     
     // Wait up to 10 seconds for the step to transition or the button to disappear
     await waitForCondition(() => {
@@ -1722,12 +1731,21 @@
   }
 
   async function runLinkedInFlow(jobData) {
-    let attempts = 0;
-    showControlBar("LinkedIn", "Starting guided flow", "Preparing the posting wizard");
+    const maxSteps = 15;
+    for (let step = 0; step < maxSteps; step++) {
+      if (isAutomationStopped) throw new Error("AUTOMATION_STOPPED");
+      if (window.location.href.includes("/detail/")) {
+        removeControlBar();
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: automation stopped on job details page.",
+          status: "LinkedIn automation complete.",
+        });
+        chrome.runtime.sendMessage({ type: "STOP_AUTOMATION" });
+        return;
+      }
 
-    while (attempts < 12) {
-      attempts += 1;
-      showControlBar("LinkedIn", `Running step ${attempts}`, "Reading the current posting page");
+      showControlBar("LinkedIn", `Running step ${step + 1}`, "Reading the current posting page");
 
       const verificationReason = detectHumanVerification();
       if (verificationReason) {
@@ -1766,7 +1784,6 @@
 
       if (isLinkedInDescriptionReviewCard(jobData)) {
         showControlBar("LinkedIn", "Accepting description", "Keeping LinkedIn's drafted description");
-        // const replacedDescription = await fillLinkedInDescriptionEditor(jobData);
         await continueLinkedInDescriptionStep();
         continue;
       }
@@ -1785,7 +1802,6 @@
       if (isLinkedInGeneratedDescriptionStep()) {
         showControlBar("LinkedIn", "Keeping drafted description", "Letting LinkedIn's AI handle the description for now");
         await waitForLinkedInGeneratedDescription();
-        // await fillLinkedInDescriptionEditor(jobData);
         const advancedDescription = await continueLinkedInDescriptionStep();
         if (advancedDescription) continue;
         await sleep(600);
@@ -1818,10 +1834,10 @@
       }
 
       showControlBar("LinkedIn", "Advancing step", "Clicking Continue");
-      continueButton.click();
+      clickElementLikeUser(continueButton);
       
-      // Wait for the button to disappear or the page to transition
       await waitForCondition(() => {
+        if (isAutomationStopped) throw new Error("AUTOMATION_STOPPED");
         const btn = findLinkedInContinueButton();
         return !btn || btn !== continueButton;
       }, 10000, 500);
@@ -1918,6 +1934,7 @@
         <button type="button" class="agent-stop">Stop</button>
       `;
       root.querySelector(".agent-stop").addEventListener("click", () => {
+        isAutomationStopped = true;
         removeControlBar();
         chrome.runtime.sendMessage({
           type: "EXTENSION_LOG",
@@ -2420,7 +2437,7 @@
         message: "Indeed: starting the guided wizard flow toward the Confirm page.",
         status: "Running Indeed wizard...",
       });
-      await runIndeedFlow(jobData);
+      await runPlatformAutomation("indeed", jobData);
     });
 
     document.body.appendChild(root);
@@ -2499,7 +2516,7 @@
         message: "LinkedIn: starting the guided posting flow.",
         status: "Running LinkedIn flow...",
       });
-      await runLinkedInFlow(jobData);
+      await runPlatformAutomation("linkedin", jobData);
     });
 
     document.body.appendChild(root);
@@ -2512,6 +2529,35 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  async function runPlatformAutomation(platform, jobData) {
+    isAutomationStopped = false;
+    try {
+      if (platform === "linkedin") {
+        if (!jobData) return;
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "LinkedIn: user authorized start of automation.",
+          status: "Starting LinkedIn flow...",
+        });
+        await runLinkedInFlow(jobData);
+      } else if (platform === "indeed") {
+        if (!jobData) return;
+        chrome.runtime.sendMessage({
+          type: "EXTENSION_LOG",
+          message: "Indeed: user authorized start of automation.",
+          status: "Starting Indeed flow...",
+        });
+        await runIndeedFlow(jobData);
+      }
+    } catch (error) {
+      if (error.message === "AUTOMATION_STOPPED") {
+        console.log("[247Labs Extension] Automation was stopped by the user.");
+      } else {
+        console.error("[247Labs Extension] Automation error:", error);
+      }
+    }
   }
 
   async function preparePlatformFill(platform, jobData) {

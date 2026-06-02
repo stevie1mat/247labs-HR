@@ -164,6 +164,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  if (message.type === "STOP_AUTOMATION") {
+    const tabId = sender?.tab?.id;
+    if (tabId && managedTabs.has(tabId)) {
+      const managed = managedTabs.get(tabId);
+      if (managed.resumeTimer) clearTimeout(managed.resumeTimer);
+      managedTabs.delete(tabId);
+      saveLog(`Automation fully stopped for tab ${tabId}`);
+    }
+    sendResponse({ ok: true });
+    return;
+  }
+
   if (message.type === "EXECUTE_JOB") {
     const { platforms = [], jobData = {} } = message.payload || {};
 
