@@ -114,3 +114,4 @@ client/public/__manus__/version.json
 
 # Supabase Local Seeds, Credentials & Schemas
 *.sql
+supabase/.temp/

@@ -89,6 +89,8 @@ export default function TemplatesPage() {
   const [postingTemplateId, setPostingTemplateId] = useState<string | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [postSuccessTitle, setPostSuccessTitle] = useState<string | null>(null);
+  const [zohoJobId, setZohoJobId] = useState<string | null>(null);
+  const [wpJobUrl, setWpJobUrl] = useState<string | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateStep, setGenerateStep] = useState<1 | 2 | 3>(1);
   const [positionInput, setPositionInput] = useState("");
@@ -201,60 +203,123 @@ export default function TemplatesPage() {
     mutationFn: async ({ templateId, sourceIds }: { templateId: string; sourceIds?: string[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Dispatch event to the Desktop App or Chrome Extension
       const template = templates?.find((t: any) => t.id === templateId);
-      const platformsToPost = sources?.filter((s: any) => sourceIds?.includes(s.id)).map((s: any) => s.platform);
+      if (!template) throw new Error("Template not found");
       
-      const payload = {
-        platforms: platformsToPost,
-        jobData: template
-      };
+      // 1. Create the job posting in Supabase
+      const { data: newPosting, error: postingError } = await supabase.from('jobPostings').insert({
+        templateId,
+        title: template.title,
+        description: template.description,
+        requirements: template.requirements,
+        salaryRange: template.salaryRange,
+        status: 'active'
+      }).select().single();
+
+      if (postingError) throw new Error(`Failed to create posting: ${postingError.message}`);
 
       await logActivity({
         action: "job_distribution_requested",
         category: "distribution",
         entityType: "job_template",
         entityId: String(templateId),
-        title: `Posting started from template: ${template?.title ?? "Untitled template"}`,
-        detail: `Distribution was requested for ${platformsToPost?.length ?? 0} platform${(platformsToPost?.length ?? 0) === 1 ? "" : "s"}.`,
+        title: `Posting started from template: ${template.title}`,
+        detail: `Distribution to Zoho Recruit requested.`,
         statusTone: "neutral",
         templateId: String(templateId),
-        metadata: {
-          sourceIds,
-          platforms: platformsToPost ?? [],
-        },
+        metadata: { sourceIds },
       });
 
-      // @ts-ignore
-      if (window.electronAPI) {
-        // @ts-ignore
-        await window.electronAPI.postJob(payload);
-      } else {
-        window.postMessage({
-          type: "POST_JOB_EXTENSION",
-          payload: payload
-        }, "*");
-      }
-
-      // Still call the edge function to log the event in the DB
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
+      // 2. Push to Zoho Recruit
+      const zohoRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zoho-manage-jobs`, {
         method: "POST",
         headers: {
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ templateId, sourceIds }),
+        body: JSON.stringify({
+          data: [
+            {
+              Posting_Title: template.title,
+              Job_Opening_Status: "In-progress",
+              Client_Name: "247 Labs",
+              Job_Description: `${template.description || ""}\n\n${template.requirements ? `Requirements:\n${template.requirements}` : ""}`.trim(),
+              Target_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              Date_Opened: new Date().toISOString().split('T')[0],
+              City: "Toronto",
+              State: "ON",
+              Country: "Canada",
+              Zip_Code: "M5V 2H1",
+              Remote_Job: true,
+              Industry: "Technology"
+            }
+          ]
+        }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
+
+      if (!zohoRes.ok) throw new Error(await zohoRes.text());
+      const resData = await zohoRes.json();
+      
+      if (resData?.data?.[0]?.status === "error") {
+        throw new Error(`Zoho Error: ${resData.data[0].message}`);
+      }
+
+      // 3. Push to other selected platforms (e.g. WordPress) via distribute-job
+      let distributeData = null;
+      if (sourceIds && sourceIds.length > 0) {
+        const distributeRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
+          method: "POST",
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            postingId: newPosting.id,
+            sourceIds: sourceIds,
+            zohoJobId: resData?.data?.[0]?.details?.id
+          }),
+        });
+
+        if (!distributeRes.ok) {
+           console.error("Distribution Error:", await distributeRes.text());
+        } else {
+           distributeData = await distributeRes.json();
+        }
+      }
+
+      await logActivity({
+        action: "distribution_succeeded",
+        category: "distribution",
+        entityType: "job_posting",
+        entityId: newPosting.id,
+        title: `Published: ${template.title}`,
+        detail: `${template.title} was distributed to Zoho Recruit ${sourceIds && sourceIds.length > 0 ? "and selected platforms." : "."}`,
+        statusTone: "success",
+        jobPostingId: newPosting.id,
+        templateId: String(templateId),
+      });
+
+      return { zohoData: resData, distributeData };
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["jobPostings"] });
       queryClient.invalidateQueries({ queryKey: ["jobRequests"] });
       queryClient.invalidateQueries({ queryKey: ["activityLogs"] });
       const title = templates?.find((template: any) => template.id === postingTemplateId)?.title ?? "Job";
       setPostSuccessTitle(title);
+      
+      if (data?.zohoData?.data?.[0]?.details?.id) {
+        setZohoJobId(data.zohoData.data[0].details.id);
+      }
+      
+      if (data?.distributeData?.logs) {
+        const wpLog = data.distributeData.logs.find((log: any) => log.platform === 'wordpress' && log.status === 'success');
+        if (wpLog?.externalUrl) {
+          setWpJobUrl(wpLog.externalUrl);
+        }
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -344,11 +409,27 @@ export default function TemplatesPage() {
     setPostingTemplateId(null);
     setSelectedSourceIds([]);
     setPostSuccessTitle(null);
+    setZohoJobId(null);
+    setWpJobUrl(null);
   };
 
   const openCreate = () => {
     setEditingId(null);
     setForm({ title: "", category: "", description: "", requirements: "", salaryRange: "", version: 1, isActive: true });
+    setShowDialog(true);
+  };
+
+  const openRemix = (template: any) => {
+    setEditingId(null);
+    setForm({
+      title: `${template.title} (Copy)`,
+      category: template.category ?? "",
+      description: template.description,
+      requirements: template.requirements ?? "",
+      salaryRange: template.salaryRange ?? "",
+      version: 1,
+      isActive: true,
+    });
     setShowDialog(true);
   };
 
@@ -368,7 +449,9 @@ export default function TemplatesPage() {
 
   const openPostDialog = (templateId: string) => {
     setPostingTemplateId(templateId);
-    setSelectedSourceIds((sources ?? []).filter((source: any) => source.isActive).map((source: any) => source.id));
+    setSelectedSourceIds((sources ?? [])
+      .filter((source: any) => source.isActive && source.platform === 'wordpress')
+      .map((source: any) => source.id));
   };
 
   const toggleSelectedSource = (sourceId: string) => {
@@ -606,7 +689,7 @@ export default function TemplatesPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setLocation(`/hire?templateId=${template.id}`)}
+                          onClick={() => openRemix(template)}
                           className="h-9 flex-1 rounded-md border-primary/20 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
                         >
                           <Shuffle className="mr-1 h-3.5 w-3.5" />
@@ -679,7 +762,7 @@ export default function TemplatesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setLocation(`/hire?templateId=${template.id}`)}
+                        onClick={() => openRemix(template)}
                         className="h-9 rounded-md border-primary/20 text-xs text-primary shadow-[0_8px_18px_rgba(120,19,124,0.10)] hover:bg-primary/5"
                       >
                         <Shuffle className="mr-1 h-3.5 w-3.5" />
@@ -713,7 +796,7 @@ export default function TemplatesPage() {
           resetPostDialog();
         }
       }}>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:max-w-2xl">
           {postFromTemplate.isPending ? (
             <div className="flex flex-col items-center justify-center py-10">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-6">
@@ -733,9 +816,31 @@ export default function TemplatesPage() {
               <p className="mt-2 max-w-[320px] text-sm leading-6 text-slate-500">
                 <strong className="font-semibold text-slate-700">{postSuccessTitle}</strong> was posted to the selected platforms.
               </p>
-              <div className="mt-6 flex w-full justify-center">
+              <div className="mt-8 flex w-full flex-col sm:flex-row justify-center gap-4">
+                {zohoJobId && (
+                  <Button
+                    variant="outline"
+                    className="px-8 border-slate-200 text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      window.open(`https://recruit.zohocloud.ca/recruit/org110002896528/EntityInfo.do?module=JobOpenings&id=${zohoJobId}`, '_blank');
+                    }}
+                  >
+                    Open in Zoho
+                  </Button>
+                )}
+                {wpJobUrl && (
+                  <Button
+                    variant="outline"
+                    className="px-8 border-slate-200 text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      window.open(wpJobUrl, '_blank');
+                    }}
+                  >
+                    Open in WordPress
+                  </Button>
+                )}
                 <Button
-                  className="min-w-[180px] bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="px-8 bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-600/20"
                   onClick={() => {
                     resetPostDialog();
                     setLocation("/my-postings");
@@ -751,41 +856,9 @@ export default function TemplatesPage() {
                 <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="mt-2 text-slate-500">
-                    This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the selected platforms:
-                    {activeSources.length > 0 ? (
-                      <div className="mt-3 flex flex-col gap-2">
-                        {activeSources.map((s: any) => (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => toggleSelectedSource(s.id)}
-                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                              selectedSourceIds.includes(s.id)
-                                ? "border-primary/30 bg-primary/5"
-                                : "border-slate-200 bg-slate-50"
-                            }`}
-                          >
-                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
-                              selectedSourceIds.includes(s.id)
-                                ? "border-primary bg-primary text-white"
-                                : "border-slate-300 bg-white"
-                            }`}>
-                              {selectedSourceIds.includes(s.id) ? <Check className="h-3.5 w-3.5" /> : null}
-                            </div>
-                            {platformIcons[s.platform] ? (
-                              <img src={platformIcons[s.platform]} alt={s.platform} className="h-5 w-5 shrink-0 object-contain" />
-                            ) : (
-                              <div className="h-5 w-5 shrink-0 rounded bg-slate-200" />
-                            )}
-                            <span className="text-sm font-medium text-slate-700">{displaySourceName(s.name) || s.platform}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                        No platforms available. Please enable at least one source before posting.
-                      </div>
-                    )}
+                    <p>
+                      This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to your <strong>WordPress site</strong> and <strong>Zoho Recruit ATS</strong>.
+                    </p>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -799,7 +872,7 @@ export default function TemplatesPage() {
                       postFromTemplate.mutate({ templateId: postingTemplateId, sourceIds: selectedSourceIds });
                     }
                   }}
-                  disabled={postFromTemplate.isPending || activeSources.length === 0 || selectedSourceIds.length === 0}
+                  disabled={postFromTemplate.isPending}
                 >
                   <Link2 className="mr-2 h-4 w-4" />
                   Post Job

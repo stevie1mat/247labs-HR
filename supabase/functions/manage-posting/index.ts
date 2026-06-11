@@ -141,6 +141,29 @@ serve(async (req) => {
     for (const log of (logs || [])) {
         if (!log.externalJobId) continue;
 
+        if (log.platform === 'zoho_recruit' && action === 'delete') {
+            try {
+                const res = await fetch(`${supabaseUrl}/functions/v1/zoho-manage-jobs`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': authHeader
+                    },
+                    body: JSON.stringify({ zohoJobId: log.externalJobId })
+                });
+                
+                if (!res.ok) {
+                    debugInfo.wpErrors.push({
+                        platform: 'zoho_recruit',
+                        error: await res.text()
+                    });
+                }
+            } catch (err: any) {
+                debugInfo.wpErrors.push({ platform: 'zoho_recruit', error: err.message });
+            }
+            continue;
+        }
+
         const source = sources?.find(s => s.id === log.postingSourceId || s.id === log.sourceId);
         if (!source || source.platform !== 'wordpress') continue;
 

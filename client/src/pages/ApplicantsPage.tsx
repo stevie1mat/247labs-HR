@@ -38,25 +38,47 @@ export default function ApplicantsPage() {
   
   const queryClient = useQueryClient();
 
-  // Fetch job postings
+  // Fetch job postings from Zoho
   const { data: postings, isLoading: isLoadingPostings } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('jobPostings').select('*').order('createdAt', { ascending: false });
+      const { data, error } = await supabase.functions.invoke('zoho-manage-jobs', {
+          method: 'GET'
+      });
       if (error) throw error;
-      return data;
+      const zohoJobs = data?.data || [];
+      return zohoJobs.map((job: any) => ({
+          id: job.id,
+          title: job.Posting_Title || "Untitled Job",
+          salaryRange: job.Salary || "",
+          createdAt: job.Created_Time,
+      }));
     }
   });
 
-  // Fetch applicants
+  // Fetch applicants from Zoho
   const { data: applicants, isLoading: isLoadingApplicants } = useQuery({
     queryKey: ['applicants'],
     queryFn: async () => {
-      // Return empty array for now until table is created
       try {
-        const { data, error } = await supabase.from('applicants').select('*').order('createdAt', { ascending: false });
+        const { data, error } = await supabase.functions.invoke('zoho-get-candidates', {
+            method: 'GET'
+        });
         if (error) throw error;
-        return data || [];
+        
+        const zohoCandidates = data?.data || [];
+        return zohoCandidates.map((candidate: any) => ({
+            id: candidate.id,
+            name: `${candidate.First_Name || ''} ${candidate.Last_Name || ''}`.trim() || "Unknown Candidate",
+            email: candidate.Email || "",
+            location: candidate.City || candidate.State || candidate.Country || "",
+            status: candidate.Candidate_Status ? 'reviewed' : 'new',
+            createdAt: candidate.Created_Time,
+            jobPostingId: null, // Zoho Candidates API requires related list fetch for jobs, defaulting to unsorted for now
+            aiScore: null,
+            aiSummary: "",
+            source: candidate.Source || "Zoho",
+        }));
       } catch (err) {
         return [];
       }

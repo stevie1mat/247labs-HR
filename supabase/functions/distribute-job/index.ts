@@ -260,8 +260,7 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  try {
-    const { templateId, postingId, sourceIds } = await req.json();
+    const { templateId, postingId, sourceIds, zohoJobId } = await req.json();
 
     const authHeader = req.headers.get('Authorization') || '';
     const supabaseClient = createClient(
@@ -368,6 +367,19 @@ serve(async (req) => {
         platforms: filteredSources.map((source: any) => source.platform),
       },
     });
+
+    if (zohoJobId) {
+        await supabaseAdmin.from('jobPostingLogs').insert({
+            postingId: posting.id,
+            jobPostingId: posting.id,
+            platform: 'zoho_recruit',
+            status: 'success',
+            externalJobId: zohoJobId,
+            attemptCount: 1,
+            lastAttemptAt: new Date().toISOString(),
+            attemptedAt: new Date().toISOString()
+        });
+    }
 
     const results = [];
     for (const source of filteredSources) {

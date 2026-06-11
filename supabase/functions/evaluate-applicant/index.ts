@@ -106,10 +106,10 @@ serve(async (req) => {
       throw new Error("Could not extract any resume text or cover letter to evaluate.");
     }
 
-    // Prepare prompt for Groq
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
-    if (!groqApiKey) {
-      throw new Error("GROQ_API_KEY is missing");
+    // Prepare prompt for OpenAI
+    const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiKey) {
+      throw new Error("OPENAI_API_KEY is missing");
     }
 
     const systemPrompt = `You are an expert HR Technical Recruiter. Your task is to evaluate a candidate's resume against a job description.
@@ -140,15 +140,15 @@ ${resumeText}
 Analyze the applicant and return the JSON evaluation.
 `;
 
-    console.log("Calling Groq API...");
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    console.log("Calling OpenAI API...");
+    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
+        Authorization: `Bearer ${openAiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -158,18 +158,18 @@ Analyze the applicant and return the JSON evaluation.
       }),
     });
 
-    if (!groqResponse.ok) {
-      const errorText = await groqResponse.text();
-      throw new Error(`Groq API Error: ${errorText}`);
+    if (!openAiResponse.ok) {
+      const errorText = await openAiResponse.text();
+      throw new Error(`OpenAI API Error: ${errorText}`);
     }
 
-    const groqData = await groqResponse.json();
-    const evaluationStr = groqData.choices[0].message.content;
+    const openAiData = await openAiResponse.json();
+    const evaluationStr = openAiData.choices[0].message.content;
     let evaluation;
     try {
       evaluation = JSON.parse(evaluationStr);
     } catch (err) {
-      throw new Error(`Failed to parse Groq response: ${evaluationStr}`);
+      throw new Error(`Failed to parse OpenAI response: ${evaluationStr}`);
     }
 
     // Update the applicant in the database

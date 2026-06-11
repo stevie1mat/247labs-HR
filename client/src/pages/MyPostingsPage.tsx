@@ -36,12 +36,6 @@ import {
 import { useLocation } from "wouter";
 import { formatDistanceToNow, format } from "date-fns";
 
-const platformIcons: Record<string, string> = {
-  linkedin: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/LinkedIn_icon.svg/1280px-LinkedIn_icon.svg.png",
-  indeed: "https://upload.wikimedia.org/wikipedia/commons/f/fc/Indeed_logo.svg",
-  wordpress: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453",
-};
-
 export default function MyPostingsPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -58,13 +52,22 @@ export default function MyPostingsPage() {
   const { data: postings, isLoading } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: async () => {
-        const { data, error } = await supabase.from('jobPostings').select('*').order('createdAt', { ascending: false });
+      const { data, error } = await supabase
+        .from('jobPostings')
+        .select('*')
+        .order('createdAt', { ascending: false });
 
-        if (error) throw error;
-        return (data ?? []).map((posting: any) => ({
-          ...posting,
-          postedAt: posting.postedAt ?? posting.createdAt,
-        }));
+      if (error) throw error;
+
+      return (data || []).map((job: any) => ({
+        id: job.id,
+        title: job.title || "Untitled Job",
+        description: job.description || "",
+        status: job.status || "active",
+        createdAt: job.createdAt,
+        postedAt: job.postedAt || job.createdAt,
+        salaryRange: job.salaryRange || "",
+      }));
     }
   });
 
@@ -73,19 +76,6 @@ export default function MyPostingsPage() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('applicants').select('id, jobPostingId');
-        if (error) throw error;
-        return data || [];
-      } catch {
-        return [];
-      }
-    }
-  });
-
-  const { data: postingLogs } = useQuery({
-    queryKey: ['jobPostingLogs_platforms'],
-    queryFn: async () => {
-      try {
-        const { data, error } = await supabase.from('jobPostingLogs').select('jobPostingId, platform');
         if (error) throw error;
         return data || [];
       } catch {
@@ -389,19 +379,6 @@ export default function MyPostingsPage() {
                     {posting.status === "open" || posting.status === "active" ? <Circle className="w-4 h-4 mr-1.5" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-4 h-4 mr-1.5" /> : <XCircle className="w-4 h-4 mr-1.5" />}
                     {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
                   </Badge>
-                  {postingLogs && postingLogs.filter((l: any) => l.jobPostingId === posting.id && l.platform).length > 0 && Array.from(new Set(postingLogs.filter((l: any) => l.jobPostingId === posting.id).map((l: any) => l.platform))).map(platform => (
-                    <Badge
-                      key={platform as string}
-                      variant="outline"
-                      className="h-9 shrink-0 rounded-full border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 shadow-sm"
-                    >
-                      {platformIcons[platform as string] ? (
-                        <img src={platformIcons[platform as string]} alt={platform as string} className="h-4 w-4 shrink-0 object-contain" />
-                      ) : (
-                        <span className="text-xs font-semibold uppercase">{String(platform).slice(0, 2)}</span>
-                      )}
-                    </Badge>
-                  ))}
                   <div className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
                     <Clock className="h-3.5 w-3.5 text-slate-400" />
                     <span>{posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "Posted recently"}</span>

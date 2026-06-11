@@ -39,28 +39,14 @@ type ChatMessage = {
 };
 
 function getAiConfig() {
-  const provider = (Deno.env.get("AI_PROVIDER") ?? "groq").toLowerCase();
-
-  if (provider === "openai") {
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
-
-    return {
-      provider,
-      apiKey,
-      endpoint: "https://api.openai.com/v1/chat/completions",
-      model: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
-    };
-  }
-
-  const apiKey = Deno.env.get("GROQ_API_KEY");
-  if (!apiKey) throw new Error("GROQ_API_KEY is missing");
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
 
   return {
-    provider: "groq",
+    provider: "openai",
     apiKey,
-    endpoint: "https://api.groq.com/openai/v1/chat/completions",
-    model: Deno.env.get("AI_MODEL") ?? "openai/gpt-oss-20b",
+    endpoint: "https://api.openai.com/v1/chat/completions",
+    model: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
   };
 }
 

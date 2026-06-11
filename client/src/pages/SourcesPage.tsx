@@ -10,53 +10,26 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, Search } from "lucide-react";
 
-type SourcePlatformOption =
-  | "linkedin"
-  | "upwork"
-  | "indeed"
-  | "wordpress"
-  | "dubizzle_jobs_uae"
-  | "wellfound"
-  | "remotive";
+type SourcePlatformOption = "zoho_recruit" | "wordpress";
 
 const platformIcons: Record<string, string> = {
-  linkedin: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/LinkedIn_icon.svg/1280px-LinkedIn_icon.svg.png",
-  wordpress: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/WordPress_blue_logo.svg/960px-WordPress_blue_logo.svg.png?_=20170312030453",
-  indeed: "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/256x256/ff794fb897747bee7ebc1325d4b7a7da",
-  upwork: "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/upwork-icon.png",
-  dubizzle_jobs_uae: "https://static.dubizzle.com/frontend-web/static-resources/assets/images/dubizzle-logo@2x.png",
-  wellfound: "https://s3-eu-west-1.amazonaws.com/tpd/logos/6374d38ef759da4900b01966/0x0.png",
-  remotive: "https://logos-world.net/wp-content/uploads/2022/01/Remotive-Emblem.png",
+  zoho_recruit: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS3qR8B1EEQQMWJuzLYaPP6_85DoJQsMra9ZQ&s",
+  wordpress: "https://s.w.org/style/images/about/WordPress-logotype-wmark.png",
 };
 
 const platformLabels: Record<SourcePlatformOption, string> = {
-  linkedin: "LinkedIn",
-  upwork: "Upwork",
-  indeed: "Indeed",
+  zoho_recruit: "Zoho Recruit",
   wordpress: "WordPress",
-  dubizzle_jobs_uae: "Dubizzle Jobs (UAE)",
-  wellfound: "Wellfound",
-  remotive: "Remotive",
 };
 
 const platformDescriptions: Record<SourcePlatformOption, string> = {
-  linkedin: "Publish roles to your LinkedIn company hiring workflow.",
-  upwork: "Distribute contract and freelance roles to Upwork.",
-  indeed: "Post roles through the Indeed browser workflow.",
-  wordpress: "Sync openings with your WordPress careers site.",
-  dubizzle_jobs_uae: "Connect an AI-assisted distribution flow for Dubizzle Jobs (UAE).",
-  wellfound: "Connect startup hiring distribution through Wellfound.",
-  remotive: "Distribute remote-friendly openings through Remotive.",
+  zoho_recruit: "Sync job openings and candidates with Zoho Recruit.",
+  wordpress: "Publish jobs natively to your WordPress career site.",
 };
 
 const platformCatalog: SourcePlatformOption[] = [
-  "linkedin",
+  "zoho_recruit",
   "wordpress",
-  "indeed",
-  "upwork",
-  "dubizzle_jobs_uae",
-  "wellfound",
-  "remotive",
 ];
 
 function displaySourceName(name?: string | null) {
