@@ -236,6 +236,63 @@ export default function TemplatesPage() {
 
       // 2. Push to Zoho Recruit if selected
       if (postToZoho) {
+        let desc = template.description || "";
+        let reqs = template.requirements || "";
+        let bens = "";
+        let resps = "";
+
+        // Extract Benefits if it exists in the description
+        const benMatch = desc.match(/Benefits:[\s\S]*$/i);
+        if (benMatch) {
+          bens = benMatch[0].replace(/Benefits:\s*/i, '').trim();
+          desc = desc.replace(/Benefits:[\s\S]*$/i, '').trim();
+        }
+
+        // Extract Requirements if they are still mixed in the description
+        const reqMatchDesc = desc.match(/Requirements:[\s\S]*$/i);
+        if (reqMatchDesc) {
+          reqs = reqMatchDesc[0].replace(/Requirements:\s*/i, '').trim() + (reqs ? "\n" + reqs : "");
+          desc = desc.replace(/Requirements:[\s\S]*$/i, '').trim();
+        }
+
+        // Further split reqs if it contains both Responsibilities and Qualifications
+        if (reqs.match(/Responsibilities:/i) && reqs.match(/Qualifications:/i)) {
+          const parts = reqs.split(/Qualifications:/i);
+          resps = parts[0].replace(/Responsibilities:\s*/i, '').trim();
+          reqs = parts[1].trim();
+        } else if (reqs.match(/Responsibilities:/i)) {
+           // Fallback if there's no Qualifications keyword but it starts with Responsibilities
+           const parts = reqs.split(/Responsibilities:/i);
+           if (parts.length > 1 && parts[0].trim() === "") {
+               // The whole thing is responsibilities
+               resps = parts[1].trim();
+               reqs = "";
+           }
+        }
+
+        const zohoPayload = {
+          data: [
+            {
+              Posting_Title: template.title,
+              Job_Opening_Status: "In-progress",
+              Client_Name: "247 Labs",
+              Job_Description: desc,
+              Key_Responsibilities: resps,
+              Qualifications: reqs,
+              Additional_Information: bens,
+              Target_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              Date_Opened: new Date().toISOString().split('T')[0],
+              City: "Toronto",
+              State: "ON",
+              Country: "Canada",
+              Zip_Code: "M5V 2H1",
+              Remote_Job: true,
+              Industry: "Technology",
+              Job_Type: "Full time"
+            }
+          ]
+        };
+
         const zohoRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zoho-manage-jobs`, {
           method: "POST",
           headers: {
@@ -243,25 +300,7 @@ export default function TemplatesPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session?.access_token}`,
           },
-          body: JSON.stringify({
-            data: [
-              {
-                Posting_Title: template.title,
-                Job_Opening_Status: "In-progress",
-                Client_Name: "247 Labs",
-                Job_Description: template.description || "",
-                Requirements: template.requirements || "",
-                Target_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                Date_Opened: new Date().toISOString().split('T')[0],
-                City: "Toronto",
-                State: "ON",
-                Country: "Canada",
-                Zip_Code: "M5V 2H1",
-                Remote_Job: true,
-                Industry: "Technology"
-              }
-            ]
-          }),
+          body: JSON.stringify(zohoPayload)
         });
 
         if (!zohoRes.ok) throw new Error(await zohoRes.text());
