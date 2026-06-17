@@ -56,6 +56,15 @@ function normalizeEvaluation(value) {
     experienceScore: score(value.experienceScore),
     locationScore: score(value.locationScore),
     skillsScore: score(value.skillsScore),
+    scoreRationale: {
+      education: String(value.scoreRationale?.education || ""),
+      experience: String(value.scoreRationale?.experience || ""),
+      location: String(value.scoreRationale?.location || ""),
+      skills: String(value.scoreRationale?.skills || ""),
+      overall: String(value.scoreRationale?.overall || ""),
+    },
+    strengths: Array.isArray(value.strengths) ? value.strengths.map(String).slice(0, 5) : [],
+    concerns: Array.isArray(value.concerns) ? value.concerns.map(String).slice(0, 5) : [],
   };
 }
 
@@ -68,7 +77,16 @@ Return only valid JSON with this exact schema:
   "educationScore": 0,
   "experienceScore": 0,
   "locationScore": 0,
-  "skillsScore": 0
+  "skillsScore": 0,
+  "scoreRationale": {
+    "education": "Why this education score was assigned.",
+    "experience": "Why this experience score was assigned.",
+    "location": "Why this location score was assigned.",
+    "skills": "Why this skills score was assigned.",
+    "overall": "Why this overall score was assigned."
+  },
+  "strengths": ["Specific evidence from the resume that supports the score."],
+  "concerns": ["Specific gaps or uncertainties that lowered the score."]
 }
 Use scores from 0 to 100. Score based on evidence in the resume text and the role requirements.`;
 
@@ -217,6 +235,16 @@ export default async function handler(req, res) {
         experienceScore: evaluation.experienceScore,
         locationScore: evaluation.locationScore,
         skillsScore: evaluation.skillsScore,
+        metadata: {
+          ...(applicant.metadata || {}),
+          evaluationDetails: {
+            scoreRationale: evaluation.scoreRationale,
+            strengths: evaluation.strengths,
+            concerns: evaluation.concerns,
+            resumeTextLength: resumeText.length,
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
         updatedAt: new Date().toISOString(),
       })
       .eq("id", applicantId);
@@ -240,6 +268,9 @@ export default async function handler(req, res) {
         applicantId,
         resumeTextLength: resumeText.length,
         scores: evaluation,
+        scoreRationale: evaluation.scoreRationale,
+        strengths: evaluation.strengths,
+        concerns: evaluation.concerns,
       },
     });
 

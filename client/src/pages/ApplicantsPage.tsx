@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound } from "lucide-react";
+import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound, CircleHelp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -35,6 +36,7 @@ export default function ApplicantsPage() {
   const [resumeFilter, setResumeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("recent");
   const [evaluating, setEvaluating] = useState<Record<string, boolean>>({});
+  const [scoreDialogApplicant, setScoreDialogApplicant] = useState<any | null>(null);
   
   const queryClient = useQueryClient();
 
@@ -65,7 +67,7 @@ export default function ApplicantsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('applicants')
-        .select('id, name, email, phone, location, portfolio, coverLetter, resumeUrl, resumeFileName, formName, source, status, aiScore, aiSummary, educationScore, experienceScore, locationScore, skillsScore, jobPostingId, createdAt')
+        .select('id, name, email, phone, location, portfolio, coverLetter, resumeUrl, resumeFileName, formName, source, status, aiScore, aiSummary, educationScore, experienceScore, locationScore, skillsScore, metadata, jobPostingId, createdAt')
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
@@ -89,6 +91,7 @@ export default function ApplicantsPage() {
         experienceScore: applicant.experienceScore,
         locationScore: applicant.locationScore,
         skillsScore: applicant.skillsScore,
+        evaluationDetails: applicant.metadata?.evaluationDetails || null,
         source: applicant.source || applicant.formName || "elementor",
       }));
     }
@@ -207,6 +210,28 @@ export default function ApplicantsPage() {
 
   const newApplicantsCount = selectedList.filter((a: any) => a.status === 'new').length;
   const withResumeCount = selectedList.filter((a: any) => Boolean(a.resumeUrl)).length;
+  const scoreRows = scoreDialogApplicant ? [
+    {
+      label: "Education",
+      score: scoreDialogApplicant.educationScore || 0,
+      rationale: scoreDialogApplicant.evaluationDetails?.scoreRationale?.education || "Based on education signals found in the resume and submission.",
+    },
+    {
+      label: "Experience",
+      score: scoreDialogApplicant.experienceScore || 0,
+      rationale: scoreDialogApplicant.evaluationDetails?.scoreRationale?.experience || "Based on relevant work history, project scope, and role alignment.",
+    },
+    {
+      label: "Location",
+      score: scoreDialogApplicant.locationScore || 0,
+      rationale: scoreDialogApplicant.evaluationDetails?.scoreRationale?.location || "Based on the applicant location evidence and the job location requirement.",
+    },
+    {
+      label: "Skills",
+      score: scoreDialogApplicant.skillsScore || 0,
+      rationale: scoreDialogApplicant.evaluationDetails?.scoreRationale?.skills || "Based on technical skills and keywords found in the resume against the job requirements.",
+    },
+  ] : [];
 
   return (
     <div className="flex h-[calc(100vh-5rem)] w-full gap-6 pb-4">
@@ -473,6 +498,16 @@ export default function ApplicantsPage() {
                                   </svg>
                                 ))}
                               </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setScoreDialogApplicant(applicant)}
+                                className="mt-3 h-8 gap-2 rounded-md px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                              >
+                                <CircleHelp className="h-4 w-4" />
+                                Why this score?
+                              </Button>
                             </>
                           ) : (
                             <Button
@@ -522,6 +557,71 @@ export default function ApplicantsPage() {
           </div>
         </div>
       </div>
+      <Dialog open={Boolean(scoreDialogApplicant)} onOpenChange={(open) => !open && setScoreDialogApplicant(null)}>
+        <DialogContent className="max-w-2xl rounded-xl border border-slate-200 bg-white">
+          <DialogHeader>
+            <DialogTitle>Score Rationale</DialogTitle>
+          </DialogHeader>
+
+          {scoreDialogApplicant ? (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">{scoreDialogApplicant.name || "Applicant"}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-700">
+                      {scoreDialogApplicant.evaluationDetails?.scoreRationale?.overall || scoreDialogApplicant.aiSummary || "No rationale has been saved yet."}
+                    </p>
+                  </div>
+                  <div className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 text-lg font-bold text-amber-700">
+                    {scoreDialogApplicant.aiScore || 0}/100
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {scoreRows.map((row) => (
+                  <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{row.label}</p>
+                      <p className="text-lg font-bold text-slate-950">{row.score}</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{row.rationale}</p>
+                  </div>
+                ))}
+              </div>
+
+              {scoreDialogApplicant.evaluationDetails?.strengths?.length ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Strengths</p>
+                  <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
+                    {scoreDialogApplicant.evaluationDetails.strengths.map((item: string, index: number) => (
+                      <li key={`${item}-${index}`} className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {scoreDialogApplicant.evaluationDetails?.concerns?.length ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Concerns</p>
+                  <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
+                    {scoreDialogApplicant.evaluationDetails.concerns.map((item: string, index: number) => (
+                      <li key={`${item}-${index}`} className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {typeof scoreDialogApplicant.evaluationDetails?.resumeTextLength === "number" ? (
+                <p className="text-xs text-slate-500">
+                  Resume text extracted: {scoreDialogApplicant.evaluationDetails.resumeTextLength.toLocaleString()} characters
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
