@@ -193,6 +193,13 @@ serve(async (req) => {
                     });
                 } else {
                     if (zohoData.error) {
+                        if (
+                            String(log.externalJobId || "").startsWith("ZOHO_RECRUIT-") &&
+                            String(zohoData.error || "").includes("Could not find Zoho Job Opening")
+                        ) {
+                            continue;
+                        }
+
                         debugInfo.externalErrors.push({
                             platform: 'zoho_recruit',
                             externalJobId: log.externalJobId,
