@@ -59,16 +59,7 @@ function normalizeEvaluation(value) {
   };
 }
 
-async function evaluateWithAi({ applicant, jobPosting, resumeText }) {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is missing in Vercel environment variables.");
-  }
-
-  const apiUrl = "https://api.openai.com/v1/chat/completions";
-  const model = process.env.OPENAI_MODEL || process.env.AI_MODEL || "gpt-4o-mini";
-
+function buildEvaluationMessages({ applicant, jobPosting, resumeText }) {
   const systemPrompt = `You are an expert HR Technical Recruiter. Evaluate the candidate's resume against the job posting.
 Return only valid JSON with this exact schema:
 {
@@ -101,6 +92,17 @@ RESUME TEXT EXTRACTED FROM PDF:
 ${resumeText || "No parseable resume text was found."}
 `;
 
+  return [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+}
+
+async function callChatCompletion({ provider, apiKey, model, messages }) {
+  const apiUrl = provider === "groq"
+    ? "https://api.groq.com/openai/v1/chat/completions"
+    : "https://api.openai.com/v1/chat/completions";
+
   const aiResponse = await fetch(apiUrl, {
     method: "POST",
     headers: {
@@ -109,17 +111,14 @@ ${resumeText || "No parseable resume text was found."}
     },
     body: JSON.stringify({
       model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+      messages,
       response_format: { type: "json_object" },
       temperature: 0.1,
     }),
   });
 
   if (!aiResponse.ok) {
-    throw new Error(`OpenAI API Error: ${await aiResponse.text()}`);
+    throw new Error(`${provider === "groq" ? "Groq" : "OpenAI"} API Error: ${await aiResponse.text()}`);
   }
 
   const aiData = await aiResponse.json();
@@ -129,6 +128,39 @@ ${resumeText || "No parseable resume text was found."}
   }
 
   return normalizeEvaluation(JSON.parse(content));
+}
+
+async function evaluateWithAi({ applicant, jobPosting, resumeText }) {
+  const messages = buildEvaluationMessages({ applicant, jobPosting, resumeText });
+  const openAiKey = process.env.OPENAI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
+
+  if (openAiKey) {
+    try {
+      return await callChatCompletion({
+        provider: "openai",
+        apiKey: openAiKey,
+        model: process.env.OPENAI_MODEL || process.env.AI_MODEL || "gpt-4o-mini",
+        messages,
+      });
+    } catch (error) {
+      if (!groqKey) {
+        throw error;
+      }
+      console.error("OpenAI evaluation failed, falling back to Groq:", error.message);
+    }
+  }
+
+  if (!groqKey) {
+    throw new Error("OPENAI_API_KEY is missing or invalid, and GROQ_API_KEY fallback is not configured.");
+  }
+
+  return await callChatCompletion({
+    provider: "groq",
+    apiKey: groqKey,
+    model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+    messages,
+  });
 }
 
 export default async function handler(req, res) {
