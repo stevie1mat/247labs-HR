@@ -45,6 +45,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { SwirlingBackground } from "./SwirlingBackground";
 import { FloatingHRIcons } from "./FloatingHRIcons";
+import { GlobalSearch } from "./GlobalSearch";
 
 // ─── Navigation Config ────────────────────────────────────────────────────────
 const hiringManagerItems = [
@@ -393,14 +394,7 @@ function DashboardLayoutContent({
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
-              <div className="relative min-w-0 sm:w-[280px] lg:w-[340px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  type="search"
-                  placeholder="Search jobs, templates, sources..."
-                  className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-none placeholder:text-slate-400 focus-visible:bg-white"
-                />
-              </div>
+              <GlobalSearch />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

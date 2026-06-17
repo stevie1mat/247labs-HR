@@ -15,6 +15,7 @@ import PostingLogsPage from "./pages/PostingLogsPage";
 import ComponentShowcase from "./pages/ComponentShowcase";
 import HomePage from "./pages/Home";
 import ExtensionInstallPage from "./pages/ExtensionInstallPage";
+import SearchPage from "./pages/SearchPage";
 
 import { AuthPage } from "./pages/AuthPage";
 
@@ -34,6 +35,7 @@ function Router() {
             <Route path="/logs" component={LogsPage} />
             <Route path="/posting-logs" component={PostingLogsPage} />
             <Route path="/extension-install" component={ExtensionInstallPage} />
+            <Route path="/search" component={SearchPage} />
             <Route path="/components" component={ComponentShowcase} />
             <Route component={NotFound} />
           </Switch>

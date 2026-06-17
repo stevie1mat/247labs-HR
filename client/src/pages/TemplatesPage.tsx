@@ -91,6 +91,7 @@ export default function TemplatesPage() {
   const [postSuccessTitle, setPostSuccessTitle] = useState<string | null>(null);
   const [zohoJobId, setZohoJobId] = useState<string | null>(null);
   const [wpJobUrl, setWpJobUrl] = useState<string | null>(null);
+  const [postToZoho, setPostToZoho] = useState(true);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateStep, setGenerateStep] = useState<1 | 2 | 3>(1);
   const [positionInput, setPositionInput] = useState("");
@@ -200,7 +201,7 @@ export default function TemplatesPage() {
   });
 
   const postFromTemplate = useMutation({
-    mutationFn: async ({ templateId, sourceIds }: { templateId: string; sourceIds?: string[] }) => {
+    mutationFn: async ({ templateId, sourceIds, postToZoho }: { templateId: string; sourceIds?: string[]; postToZoho: boolean }) => {
       const { data: { session } } = await supabase.auth.getSession();
       
       const template = templates?.find((t: any) => t.id === templateId);
@@ -230,39 +231,46 @@ export default function TemplatesPage() {
         metadata: { sourceIds },
       });
 
-      // 2. Push to Zoho Recruit
-      const zohoRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zoho-manage-jobs`, {
-        method: "POST",
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          data: [
-            {
-              Posting_Title: template.title,
-              Job_Opening_Status: "In-progress",
-              Client_Name: "247 Labs",
-              Job_Description: `${template.description || ""}\n\n${template.requirements ? `Requirements:\n${template.requirements}` : ""}`.trim(),
-              Target_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              Date_Opened: new Date().toISOString().split('T')[0],
-              City: "Toronto",
-              State: "ON",
-              Country: "Canada",
-              Zip_Code: "M5V 2H1",
-              Remote_Job: true,
-              Industry: "Technology"
-            }
-          ]
-        }),
-      });
+      let zohoResData = null;
+      let zohoJobIdParam = null;
 
-      if (!zohoRes.ok) throw new Error(await zohoRes.text());
-      const resData = await zohoRes.json();
-      
-      if (resData?.data?.[0]?.status === "error") {
-        throw new Error(`Zoho Error: ${resData.data[0].message}`);
+      // 2. Push to Zoho Recruit if selected
+      if (postToZoho) {
+        const zohoRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zoho-manage-jobs`, {
+          method: "POST",
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            data: [
+              {
+                Posting_Title: template.title,
+                Job_Opening_Status: "In-progress",
+                Client_Name: "247 Labs",
+                Job_Description: template.description || "",
+                Requirements: template.requirements || "",
+                Target_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                Date_Opened: new Date().toISOString().split('T')[0],
+                City: "Toronto",
+                State: "ON",
+                Country: "Canada",
+                Zip_Code: "M5V 2H1",
+                Remote_Job: true,
+                Industry: "Technology"
+              }
+            ]
+          }),
+        });
+
+        if (!zohoRes.ok) throw new Error(await zohoRes.text());
+        zohoResData = await zohoRes.json();
+        
+        if (zohoResData?.data?.[0]?.status === "error") {
+          throw new Error(`Zoho Error: ${zohoResData.data[0].message}`);
+        }
+        zohoJobIdParam = zohoResData?.data?.[0]?.details?.id;
       }
 
       // 3. Push to other selected platforms (e.g. WordPress) via distribute-job
@@ -278,7 +286,7 @@ export default function TemplatesPage() {
           body: JSON.stringify({
             postingId: newPosting.id,
             sourceIds: sourceIds,
-            zohoJobId: resData?.data?.[0]?.details?.id
+            zohoJobId: zohoJobIdParam
           }),
         });
 
@@ -301,7 +309,7 @@ export default function TemplatesPage() {
         templateId: String(templateId),
       });
 
-      return { zohoData: resData, distributeData };
+      return { zohoData: zohoResData, distributeData };
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["jobPostings"] });
@@ -403,11 +411,12 @@ export default function TemplatesPage() {
     )
   ).sort((a, b) => a.localeCompare(b));
 
-  const activeSources = (sources ?? []).filter((source: any) => source.isActive);
+  const activeSources = (sources ?? []).filter((source: any) => source.isActive && source.platform === 'wordpress');
 
   const resetPostDialog = () => {
     setPostingTemplateId(null);
     setSelectedSourceIds([]);
+    setPostToZoho(true);
     setPostSuccessTitle(null);
     setZohoJobId(null);
     setWpJobUrl(null);
@@ -449,6 +458,7 @@ export default function TemplatesPage() {
 
   const openPostDialog = (templateId: string) => {
     setPostingTemplateId(templateId);
+    setPostToZoho(true);
     setSelectedSourceIds((sources ?? [])
       .filter((source: any) => source.isActive && source.platform === 'wordpress')
       .map((source: any) => source.id));
@@ -856,9 +866,41 @@ export default function TemplatesPage() {
                 <AlertDialogTitle>Post Job Now?</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="mt-2 text-slate-500">
-                    <p>
-                      This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to your <strong>WordPress site</strong> and <strong>Zoho Recruit ATS</strong>.
+                    <p className="mb-4">
+                      This will immediately post <strong>{templates?.find((template: any) => template.id === postingTemplateId)?.title}</strong> to the selected platforms:
                     </p>
+                    <div className="space-y-3">
+                      {/* Zoho Recruit Checkbox */}
+                      <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-slate-50 ${postToZoho ? 'border-primary/50 bg-primary/5' : 'border-slate-200'}`}>
+                        <div className={`flex h-5 w-5 items-center justify-center rounded border ${postToZoho ? 'bg-primary border-primary text-primary-foreground' : 'border-slate-300 bg-white'}`}>
+                          {postToZoho && <Check className="h-3.5 w-3.5" />}
+                        </div>
+                        <input type="checkbox" className="hidden" checked={postToZoho} onChange={() => setPostToZoho(!postToZoho)} />
+                        <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-blue-100 p-1">
+                          <img src="https://zohowebstatic.com/sites/zweb/images/favicon.ico" alt="Zoho" className="h-full w-full object-contain" />
+                        </div>
+                        <span className="font-medium text-slate-900">Zoho Recruit</span>
+                      </label>
+                      
+                      {/* WordPress Checkbox (and any other allowed activeSources) */}
+                      {activeSources.map((source: any) => {
+                        const isChecked = selectedSourceIds.includes(source.id);
+                        return (
+                          <label key={source.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors hover:bg-slate-50 ${isChecked ? 'border-primary/50 bg-primary/5' : 'border-slate-200'}`}>
+                            <div className={`flex h-5 w-5 items-center justify-center rounded border ${isChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-slate-300 bg-white'}`}>
+                              {isChecked && <Check className="h-3.5 w-3.5" />}
+                            </div>
+                            <input type="checkbox" className="hidden" checked={isChecked} onChange={() => toggleSelectedSource(source.id)} />
+                            {platformIcons[source.platform] ? (
+                              <div className="flex h-6 w-6 items-center justify-center">
+                                <img src={platformIcons[source.platform]} alt={source.platform} className="max-h-full max-w-full object-contain" />
+                              </div>
+                            ) : null}
+                            <span className="font-medium text-slate-900">{displaySourceName(source.name)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -869,7 +911,7 @@ export default function TemplatesPage() {
                   onClick={(e) => {
                     e.preventDefault();
                     if (postingTemplateId !== null) {
-                      postFromTemplate.mutate({ templateId: postingTemplateId, sourceIds: selectedSourceIds });
+                      postFromTemplate.mutate({ templateId: postingTemplateId, sourceIds: selectedSourceIds, postToZoho });
                     }
                   }}
                   disabled={postFromTemplate.isPending}

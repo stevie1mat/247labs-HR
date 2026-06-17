@@ -342,7 +342,7 @@ export default function MyPostingsPage() {
                           className="text-amber-700 focus:text-amber-700 cursor-pointer"
                         >
                           <XCircle className="w-4 h-4 mr-2" />
-                          Put in Draft
+                          Put in Draft on WP
                         </DropdownMenuItem>
                         {(posting.status === 'draft' || posting.status === 'fulfilled') && (
                           <DropdownMenuItem
@@ -414,7 +414,7 @@ export default function MyPostingsPage() {
                 </div>
                 <div className="flex-1">
                   <AlertDialogTitle className="text-left">
-                    {confirmManage?.action === 'close' ? "Moving posting to draft" :
+                    {confirmManage?.action === 'close' ? "Moving posting to draft on WP" :
                      confirmManage?.action === 'delete' ? "Deleting posting permanently" :
                      confirmManage?.action === 'relist' ? "Relisting posting" : "Marking posting as fulfilled"}
                   </AlertDialogTitle>
@@ -467,7 +467,7 @@ export default function MyPostingsPage() {
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {confirmManage?.action === 'close' ? "Move Posting to Draft?" :
+                  {confirmManage?.action === 'close' ? "Move Posting to Draft on WP?" :
                    confirmManage?.action === 'delete' ? "Delete Posting Permanently?" :
                    confirmManage?.action === 'relist' ? "Relist Posting?" : "Mark as Fulfilled?"}
                 </AlertDialogTitle>
@@ -495,7 +495,7 @@ export default function MyPostingsPage() {
                     confirmManage !== null && managePostingMutation.mutate(confirmManage);
                   }}
                 >
-                  {confirmManage?.action === 'close' ? "Move to Draft" :
+                  {confirmManage?.action === 'close' ? "Move to Draft on WP" :
                    confirmManage?.action === 'delete' ? "Delete Permanently" :
                    confirmManage?.action === 'relist' ? "Relist" : "Mark Fulfilled"}
                 </Button>

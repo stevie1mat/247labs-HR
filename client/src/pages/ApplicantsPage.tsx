@@ -74,7 +74,7 @@ export default function ApplicantsPage() {
             location: candidate.City || candidate.State || candidate.Country || "",
             status: candidate.Candidate_Status ? 'reviewed' : 'new',
             createdAt: candidate.Created_Time,
-            jobPostingId: null, // Zoho Candidates API requires related list fetch for jobs, defaulting to unsorted for now
+            jobPostingId: candidate.jobPostingId || null,
             aiScore: null,
             aiSummary: "",
             source: candidate.Source || "Zoho",
@@ -363,7 +363,7 @@ export default function ApplicantsPage() {
             ) : (
               filteredApplicants.map((applicant: any) => (
                 <div
-                  key={applicant.id} 
+                  key={`${applicant.id}-${applicant.jobPostingId || 'unsorted'}`} 
                   className="group rounded-2xl border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
                 >
                   {(() => {

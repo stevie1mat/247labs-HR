@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 import { corsHeaders } from '../_shared/cors.ts'
 
 async function getAccessToken() {
@@ -32,23 +33,94 @@ serve(async (req) => {
   try {
     const accessToken = await getAccessToken();
 
-    // Fetch Candidates from Zoho Recruit
-    // Using recruit/v2/Candidates
-    const zohoUrl = 'https://recruit.zohocloud.ca/recruit/v2/Candidates';
-    const response = await fetch(zohoUrl, {
+    // 1. Fetch Candidates from Zoho Recruit
+    const zohoCandidatesUrl = 'https://recruit.zohocloud.ca/recruit/v2/Candidates';
+    const candResponse = await fetch(zohoCandidatesUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Zoho-oauthtoken ${accessToken}`,
       }
     });
 
-    const data = await response.json();
+    let candidates = [];
+    if (candResponse.status !== 204) {
+      const candData = await candResponse.json();
+      candidates = candData.data || [];
+    }
 
-    return new Response(JSON.stringify(data), {
+    // 2. Fetch Applications from Zoho Recruit
+    const zohoAppsUrl = 'https://recruit.zohocloud.ca/recruit/v2/Applications';
+    const appsResponse = await fetch(zohoAppsUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+      }
+    });
+
+    let applications = [];
+    if (appsResponse.status !== 204) {
+      const appsData = await appsResponse.json();
+      applications = appsData.data || [];
+    }
+
+    // 3. Fetch jobPostingLogs from Supabase to map zoho Job_Opening_Id to local postingId
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    
+    const { data: logs, error: logsError } = await supabaseAdmin
+      .from('jobPostingLogs')
+      .select('jobPostingId, externalJobId')
+      .eq('platform', 'zoho_recruit')
+      .not('externalJobId', 'is', null);
+
+    if (logsError) {
+      console.error("Error fetching job logs:", logsError);
+    }
+
+    const zohoToLocalJobMap: Record<string, string> = {};
+    if (logs) {
+      for (const log of logs) {
+        if (log.externalJobId && log.jobPostingId) {
+          zohoToLocalJobMap[log.externalJobId] = log.jobPostingId;
+        }
+      }
+    }
+
+    // 4. Map Candidates to their Applications and assign jobPostingId
+    const mappedCandidates = [];
+    
+    for (const candidate of candidates) {
+      const candidateApps = applications.filter((app: any) => app.Candidate_Name?.id === candidate.id);
+      
+      if (candidateApps.length > 0) {
+        for (const app of candidateApps) {
+          const zohoJobId = app.Job_Opening_Name?.id;
+          const localJobId = zohoJobId ? zohoToLocalJobMap[zohoJobId] : null;
+          
+          mappedCandidates.push({
+            ...candidate,
+            jobPostingId: localJobId,
+            applicationId: app.id,
+            // Optionally override candidate status with application status if needed
+            Candidate_Status: app.Application_Status || candidate.Candidate_Status
+          });
+        }
+      } else {
+        // No applications found, return as unsorted
+        mappedCandidates.push({
+          ...candidate,
+          jobPostingId: null
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({ data: mappedCandidates }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in zoho-get-candidates:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
