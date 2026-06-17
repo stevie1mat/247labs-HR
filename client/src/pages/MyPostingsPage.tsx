@@ -131,18 +131,25 @@ export default function MyPostingsPage() {
             try {
                 const err = await res.json();
                 errMessage = err.error || errMessage;
+                const externalErrors = err?.debug?.externalErrors || err?.debug?.wpErrors || [];
+                if (externalErrors.length > 0) {
+                  errMessage = `${errMessage}: ${formatWpDebugError(externalErrors[0])}`;
+                }
             } catch {}
             throw new Error(errMessage);
         }
         return await res.json();
     },
     onSuccess: (data, variables) => {
-      if (data?.debug?.wpErrors?.length > 0) {
-          console.error("WordPress manage-posting debug", data.debug);
+      const externalErrors = data?.debug?.externalErrors || data?.debug?.wpErrors || [];
+      if (externalErrors.length > 0) {
+          console.error("External manage-posting debug", data.debug);
+          const firstError = externalErrors[0];
+          const platformName = firstError?.platform === "zoho_recruit" ? "Zoho" : "WordPress";
           setManageResult({
             status: "error",
-            title: "WordPress update failed",
-            detail: formatWpDebugError(data.debug.wpErrors[0]),
+            title: `${platformName} update failed`,
+            detail: formatWpDebugError(firstError),
           });
       } else if (data?.debug?.logsFound === 0) {
           setManageResult({

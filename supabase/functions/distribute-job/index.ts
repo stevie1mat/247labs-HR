@@ -260,6 +260,7 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  try {
     const { templateId, postingId, sourceIds, zohoJobId } = await req.json();
 
     const authHeader = req.headers.get('Authorization') || '';
@@ -345,9 +346,10 @@ serve(async (req) => {
         .select('*')
         .eq('isActive', true);
 
-    const filteredSources = Array.isArray(sourceIds) && sourceIds.length > 0
+    const filteredSources = Array.isArray(sourceIds)
       ? (sources || []).filter((source: any) => sourceIds.includes(source.id))
       : (sources || []);
+    const externalSources = filteredSources.filter((source: any) => source.platform !== 'zoho_recruit');
 
     await logActivity(supabaseAdmin, {
       action: "job_distribution_started",
@@ -355,7 +357,7 @@ serve(async (req) => {
       entityType: "job_posting",
       entityId: posting.id,
       title: `Distribution started: ${posting.title}`,
-      detail: `Publishing workflow started for ${filteredSources.length} platform${filteredSources.length === 1 ? "" : "s"}.`,
+      detail: `Publishing workflow started for ${externalSources.length} platform${externalSources.length === 1 ? "" : "s"}.`,
       statusTone: "neutral",
       jobPostingId: posting.id,
       templateId: posting.templateId ?? templateId ?? null,
@@ -363,8 +365,8 @@ serve(async (req) => {
       actorEmail: user.email ?? null,
       metadata: {
         jobTitle: posting.title,
-        sourceIds: filteredSources.map((source: any) => source.id),
-        platforms: filteredSources.map((source: any) => source.platform),
+        sourceIds: externalSources.map((source: any) => source.id),
+        platforms: externalSources.map((source: any) => source.platform),
       },
     });
 
@@ -382,7 +384,7 @@ serve(async (req) => {
     }
 
     const results = [];
-    for (const source of filteredSources) {
+    for (const source of externalSources) {
         let success = false;
         let externalUrl = null;
         let errorMessage = null;

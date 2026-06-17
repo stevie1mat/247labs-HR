@@ -225,10 +225,12 @@ export default function TemplatesPage() {
         entityType: "job_template",
         entityId: String(templateId),
         title: `Posting started from template: ${template.title}`,
-        detail: `Distribution to Zoho Recruit requested.`,
+        detail: postToZoho || (sourceIds && sourceIds.length > 0)
+          ? `Distribution to selected platforms requested.`
+          : `A local posting was created without external publishing.`,
         statusTone: "neutral",
         templateId: String(templateId),
-        metadata: { sourceIds },
+        metadata: { sourceIds, postToZoho },
       });
 
       let zohoResData = null;
@@ -342,7 +344,9 @@ export default function TemplatesPage() {
         entityType: "job_posting",
         entityId: newPosting.id,
         title: `Published: ${template.title}`,
-        detail: `${template.title} was distributed to Zoho Recruit ${sourceIds && sourceIds.length > 0 ? "and selected platforms." : "."}`,
+        detail: postToZoho || (sourceIds && sourceIds.length > 0)
+          ? `${template.title} was distributed to the selected external platform${postToZoho && sourceIds && sourceIds.length > 0 ? "s" : ""}.`
+          : `${template.title} was created locally without external publishing.`,
         statusTone: "success",
         jobPostingId: newPosting.id,
         templateId: String(templateId),

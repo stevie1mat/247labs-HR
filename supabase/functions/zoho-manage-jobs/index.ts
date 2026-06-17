@@ -23,6 +23,121 @@ async function getAccessToken() {
   throw new Error('Failed to obtain access token from Zoho');
 }
 
+async function readZohoJson(response: Response) {
+  const raw = await response.text();
+  if (!raw) return {};
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { error: raw };
+  }
+}
+
+function getZohoApiError(data: any) {
+  const firstResult = data?.data?.[0];
+  if (firstResult?.status === "error") {
+    return firstResult.message || firstResult.code || "Zoho returned an error";
+  }
+
+  if (data?.status === "error" || data?.error) {
+    return data.message || data.error || "Zoho returned an error";
+  }
+
+  return null;
+}
+
+async function resolveZohoJobRecordId(accessToken: string, zohoUrl: string, zohoJobId: string, postingTitle?: string) {
+  const trimmedId = String(zohoJobId).trim();
+
+  if (/^\d+$/.test(trimmedId)) {
+    return trimmedId;
+  }
+
+  if (trimmedId && !trimmedId.startsWith("ZOHO_RECRUIT-")) {
+    const criteria = encodeURIComponent(`(Job_Opening_ID:equals:${trimmedId})`);
+    const searchResponse = await fetch(`${zohoUrl}/search?criteria=${criteria}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+      }
+    });
+    const searchData = await readZohoJson(searchResponse);
+    const searchMatch = searchResponse.ok ? searchData?.data?.[0] : null;
+    if (searchMatch?.id) {
+      return String(searchMatch.id);
+    }
+  }
+
+  const response = await fetch(`${zohoUrl}?fields=id,Posting_Title,Job_Opening_ID&per_page=200`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Zoho-oauthtoken ${accessToken}`,
+    }
+  });
+  const data = await readZohoJson(response);
+
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || `Failed to look up Zoho job (${response.status})`);
+  }
+
+  const match = (data?.data || []).find((job: any) => {
+    return String(job?.id || "") === trimmedId || String(job?.Job_Opening_ID || "") === trimmedId;
+  });
+
+  if (!match?.id) {
+    const titleMatch = postingTitle
+      ? (data?.data || []).find((job: any) => String(job?.Posting_Title || "") === String(postingTitle))
+      : null;
+
+    if (titleMatch?.id) {
+      return String(titleMatch.id);
+    }
+
+    throw new Error(`Could not find Zoho Job Opening with ID ${trimmedId || "(blank)"}`);
+  }
+
+  return String(match.id);
+}
+
+async function deleteZohoJob(accessToken: string, zohoUrl: string, recordId: string) {
+  const headers = {
+    'Authorization': `Zoho-oauthtoken ${accessToken}`,
+  };
+
+  const bulkResponse = await fetch(`${zohoUrl}?ids=${encodeURIComponent(recordId)}`, {
+    method: 'DELETE',
+    headers,
+  });
+  const bulkData = await readZohoJson(bulkResponse);
+  const bulkError = getZohoApiError(bulkData);
+
+  if (bulkResponse.ok && !bulkError) {
+    return bulkData;
+  }
+
+  const singleResponse = await fetch(`${zohoUrl}/${encodeURIComponent(recordId)}`, {
+    method: 'DELETE',
+    headers,
+  });
+  const singleData = await readZohoJson(singleResponse);
+  const singleError = getZohoApiError(singleData);
+
+  if (singleResponse.ok && !singleError) {
+    return singleData;
+  }
+
+  throw new Error(
+    singleError ||
+    singleData?.message ||
+    singleData?.error ||
+    bulkError ||
+    bulkData?.message ||
+    bulkData?.error ||
+    `Zoho delete failed for record ${recordId}`
+  );
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -40,7 +155,7 @@ serve(async (req) => {
           'Authorization': `Zoho-oauthtoken ${accessToken}`,
         }
       });
-      const data = await response.json();
+      const data = await readZohoJson(response);
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -58,7 +173,7 @@ serve(async (req) => {
         // body should be { data: [...] } as per Zoho API
         body: JSON.stringify(body)
       });
-      const data = await response.json();
+      const data = await readZohoJson(response);
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -66,22 +181,13 @@ serve(async (req) => {
     }
 
     if (req.method === 'DELETE') {
-      const { zohoJobId } = await req.json();
-      if (!zohoJobId) throw new Error("zohoJobId is required for DELETE");
-      
-      const response = await fetch(`${zohoUrl}?ids=${zohoJobId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Zoho-oauthtoken ${accessToken}`,
-        }
-      });
-      const data = await response.json();
+      const { zohoJobId, postingTitle } = await req.json();
+      if (!zohoJobId && !postingTitle) throw new Error("zohoJobId or postingTitle is required for DELETE");
 
-      if (data?.data?.[0]?.status === "error") {
-        throw new Error(data.data[0].message);
-      }
+      const recordId = await resolveZohoJobRecordId(accessToken, zohoUrl, String(zohoJobId || ""), postingTitle);
+      const data = await deleteZohoJob(accessToken, zohoUrl, recordId);
 
-      return new Response(JSON.stringify(data), {
+      return new Response(JSON.stringify({ ...data, resolvedZohoJobId: recordId }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });

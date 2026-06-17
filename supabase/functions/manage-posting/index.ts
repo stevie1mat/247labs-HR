@@ -51,6 +51,7 @@ async function resolveWordPressPost(
   postType: string,
   auth: string,
   externalUrl: string | null,
+  title?: string | null,
 ) {
   const idFromUrl = externalUrl ? parsePostIdFromUrl(externalUrl) : "";
   if (idFromUrl) {
@@ -71,6 +72,30 @@ async function resolveWordPressPost(
         return {
           id: String(slugData[0].id),
           link: slugData[0].link ?? externalUrl,
+        };
+      }
+    }
+  }
+
+  if (title) {
+    const searchRes = await fetch(`${siteUrl}/wp-json/wp/v2/${postType}?search=${encodeURIComponent(title)}&status=any&_fields=id,link,title,slug`, {
+      headers: {
+        "Authorization": `Basic ${auth}`,
+      },
+    });
+
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      if (Array.isArray(searchData) && searchData.length > 0) {
+        const exactMatch = searchData.find((post: any) => {
+          const renderedTitle = String(post?.title?.rendered || "").replace(/<[^>]*>/g, "").trim();
+          return renderedTitle === title;
+        });
+        const post = exactMatch || searchData[0];
+
+        return {
+          id: String(post.id),
+          link: post.link ?? externalUrl,
         };
       }
     }
@@ -133,6 +158,7 @@ serve(async (req) => {
 
     const debugInfo: any = {
       logsFound: logs?.length || 0,
+      externalErrors: [],
       wpErrors: [],
       wpRequests: [],
     };
@@ -149,25 +175,33 @@ serve(async (req) => {
                         'Content-Type': 'application/json',
                         'Authorization': authHeader
                     },
-                    body: JSON.stringify({ zohoJobId: log.externalJobId })
+                    body: JSON.stringify({ zohoJobId: log.externalJobId, postingTitle: posting.title })
                 });
+                const responseText = await res.text();
+                let zohoData: any = {};
+                try {
+                    zohoData = responseText ? JSON.parse(responseText) : {};
+                } catch {
+                    zohoData = { error: responseText };
+                }
                 
                 if (!res.ok) {
-                    debugInfo.wpErrors.push({
+                    debugInfo.externalErrors.push({
                         platform: 'zoho_recruit',
-                        error: await res.text()
+                        externalJobId: log.externalJobId,
+                        error: zohoData.error || responseText || `Zoho delete failed with ${res.status}`
                     });
                 } else {
-                    const zohoData = await res.json();
                     if (zohoData.error) {
-                        debugInfo.wpErrors.push({
+                        debugInfo.externalErrors.push({
                             platform: 'zoho_recruit',
+                            externalJobId: log.externalJobId,
                             error: zohoData.error
                         });
                     }
                 }
             } catch (err: any) {
-                debugInfo.wpErrors.push({ platform: 'zoho_recruit', error: err.message });
+                debugInfo.externalErrors.push({ platform: 'zoho_recruit', externalJobId: log.externalJobId, error: err.message });
             }
             continue;
         }
@@ -218,6 +252,7 @@ serve(async (req) => {
                       postType,
                       auth,
                       resolvedExternalUrl,
+                      posting.title,
                     );
 
                     if (resolvedPost?.id && resolvedPost.id !== resolvedExternalJobId) {
@@ -287,6 +322,7 @@ serve(async (req) => {
                       postType,
                       auth,
                       resolvedExternalUrl,
+                      posting.title,
                     );
 
                     if (resolvedPost?.id && resolvedPost.id !== resolvedExternalJobId) {
@@ -339,6 +375,7 @@ serve(async (req) => {
                       previousExternalJobId: log.externalJobId ?? null,
                       response: responseText,
                     });
+                    debugInfo.externalErrors.push(debugInfo.wpErrors[debugInfo.wpErrors.length - 1]);
                 }
             } else if (action === 'delete') {
                 const deleteUrl = `${apiUrl}?force=true`;
@@ -350,6 +387,58 @@ serve(async (req) => {
                 });
 
                 if (!res.ok) {
+                    const responseText = await res.text();
+                    const resolvedPost = await resolveWordPressPost(
+                      siteUrl,
+                      postType,
+                      auth,
+                      resolvedExternalUrl,
+                      posting.title,
+                    );
+
+                    if (resolvedPost?.id && resolvedPost.id !== resolvedExternalJobId) {
+                      resolvedExternalJobId = resolvedPost.id;
+                      resolvedExternalUrl = resolvedPost.link ?? resolvedExternalUrl;
+
+                      await supabaseClient
+                        .from("jobPostingLogs")
+                        .update({
+                          externalJobId: resolvedExternalJobId,
+                          externalUrl: resolvedExternalUrl,
+                          lastAttemptAt: new Date().toISOString(),
+                        })
+                        .eq("id", log.id);
+
+                      const retryDeleteUrl = `${siteUrl}/wp-json/wp/v2/${postType}/${resolvedExternalJobId}?force=true`;
+                      const retryRes = await fetch(retryDeleteUrl, {
+                        method: 'DELETE',
+                        headers: {
+                          'Authorization': `Basic ${auth}`
+                        },
+                      });
+
+                      if (retryRes.ok) {
+                        continue;
+                      }
+
+                      debugInfo.wpErrors.push({
+                        postingSourceId: source.id ?? null,
+                        externalJobId: resolvedExternalJobId ?? null,
+                        postType,
+                        username,
+                        apiUrl: retryDeleteUrl,
+                        action,
+                        previousExternalJobId: log.externalJobId ?? null,
+                        response: await retryRes.text(),
+                      });
+                      debugInfo.externalErrors.push(debugInfo.wpErrors[debugInfo.wpErrors.length - 1]);
+                      continue;
+                    }
+
+                    if (responseText.includes("rest_post_invalid_id") || responseText.includes("Invalid post ID")) {
+                      continue;
+                    }
+
                     debugInfo.wpErrors.push({
                       postingSourceId: source.id ?? null,
                       externalJobId: resolvedExternalJobId ?? null,
@@ -358,8 +447,9 @@ serve(async (req) => {
                       apiUrl: deleteUrl,
                       action,
                       previousExternalJobId: log.externalJobId ?? null,
-                      response: await res.text(),
+                      response: responseText,
                     });
+                    debugInfo.externalErrors.push(debugInfo.wpErrors[debugInfo.wpErrors.length - 1]);
                 }
             }
         } catch (err: any) {
@@ -367,12 +457,14 @@ serve(async (req) => {
               action,
               error: err.message,
             });
+            debugInfo.externalErrors.push(debugInfo.wpErrors[debugInfo.wpErrors.length - 1]);
         }
     }
 
-    if (action === "delete" && debugInfo.wpErrors.length > 0) {
+    if (action === "delete" && debugInfo.externalErrors.length > 0) {
+      const hasZohoError = debugInfo.externalErrors.some((error: any) => error?.platform === "zoho_recruit");
       return new Response(JSON.stringify({
-        error: "WordPress delete failed",
+        error: hasZohoError ? "Zoho delete failed" : "WordPress delete failed",
         debug: debugInfo,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
