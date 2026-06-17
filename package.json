@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "zip -r client/public/extension.zip extension/ && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
