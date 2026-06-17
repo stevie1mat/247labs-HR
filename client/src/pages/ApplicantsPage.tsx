@@ -29,7 +29,7 @@ const sourceBadgeMap: Record<string, string> = {
 
 export default function ApplicantsPage() {
   const [location] = useLocation();
-  const [selectedPostingId, setSelectedPostingId] = useState<number | 'unsorted' | null>(null);
+  const [selectedPostingId, setSelectedPostingId] = useState<string | 'unsorted' | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [resumeFilter, setResumeFilter] = useState("all");
@@ -38,50 +38,55 @@ export default function ApplicantsPage() {
   
   const queryClient = useQueryClient();
 
-  // Fetch job postings from Zoho
+  // Fetch local job postings. WordPress/Elementor applicants are stored locally.
   const { data: postings, isLoading: isLoadingPostings } = useQuery({
     queryKey: ['jobPostings'],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('zoho-manage-jobs', {
-          method: 'GET'
-      });
+      const { data, error } = await supabase
+        .from('jobPostings')
+        .select('id, title, salaryRange, createdAt, postedAt, status')
+        .order('createdAt', { ascending: false });
+
       if (error) throw error;
-      const zohoJobs = data?.data || [];
-      return zohoJobs.map((job: any) => ({
-          id: job.id,
-          title: job.Posting_Title || "Untitled Job",
-          salaryRange: job.Salary || "",
-          createdAt: job.Created_Time,
+
+      return (data || []).map((job: any) => ({
+        id: String(job.id),
+        title: job.title || "Untitled Job",
+        salaryRange: job.salaryRange || "",
+        createdAt: job.postedAt || job.createdAt,
+        status: job.status || "",
       }));
     }
   });
 
-  // Fetch applicants from Zoho
+  // Fetch local applicants received from WordPress/Elementor and other local sources.
   const { data: applicants, isLoading: isLoadingApplicants } = useQuery({
     queryKey: ['applicants'],
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('zoho-get-candidates', {
-            method: 'GET'
-        });
-        if (error) throw error;
-        
-        const zohoCandidates = data?.data || [];
-        return zohoCandidates.map((candidate: any) => ({
-            id: candidate.id,
-            name: `${candidate.First_Name || ''} ${candidate.Last_Name || ''}`.trim() || "Unknown Candidate",
-            email: candidate.Email || "",
-            location: candidate.City || candidate.State || candidate.Country || "",
-            status: candidate.Candidate_Status ? 'reviewed' : 'new',
-            createdAt: candidate.Created_Time,
-            jobPostingId: candidate.jobPostingId || null,
-            aiScore: null,
-            aiSummary: "",
-            source: candidate.Source || "Zoho",
-        }));
-      } catch (err) {
-        return [];
-      }
+      const { data, error } = await supabase
+        .from('applicants')
+        .select('id, name, email, phone, location, portfolio, coverLetter, resumeUrl, resumeFileName, formName, source, status, aiScore, aiSummary, jobPostingId, createdAt')
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+
+      return (data || []).map((applicant: any) => ({
+        id: applicant.id,
+        name: applicant.name || "Unknown Candidate",
+        email: applicant.email || "",
+        phone: applicant.phone || "",
+        location: applicant.location || "",
+        portfolio: applicant.portfolio || "",
+        coverLetter: applicant.coverLetter || "",
+        resumeUrl: applicant.resumeUrl || "",
+        resumeFileName: applicant.resumeFileName || "",
+        status: applicant.status || "new",
+        createdAt: applicant.createdAt,
+        jobPostingId: applicant.jobPostingId ? String(applicant.jobPostingId) : null,
+        aiScore: applicant.aiScore,
+        aiSummary: applicant.aiSummary || "",
+        source: applicant.source || applicant.formName || "elementor",
+      }));
     }
   });
 
