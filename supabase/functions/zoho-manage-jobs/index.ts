@@ -69,13 +69,18 @@ serve(async (req) => {
       const { zohoJobId } = await req.json();
       if (!zohoJobId) throw new Error("zohoJobId is required for DELETE");
       
-      const response = await fetch(`${zohoUrl}/${zohoJobId}`, {
+      const response = await fetch(`${zohoUrl}?ids=${zohoJobId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`,
         }
       });
       const data = await response.json();
+
+      if (data?.data?.[0]?.status === "error") {
+        throw new Error(data.data[0].message);
+      }
+
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,

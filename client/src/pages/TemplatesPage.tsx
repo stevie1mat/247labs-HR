@@ -314,7 +314,7 @@ export default function TemplatesPage() {
 
       // 3. Push to other selected platforms (e.g. WordPress) via distribute-job
       let distributeData = null;
-      if (sourceIds && sourceIds.length > 0) {
+      if ((sourceIds && sourceIds.length > 0) || zohoJobIdParam) {
         const distributeRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/distribute-job`, {
           method: "POST",
           headers: {

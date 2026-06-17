@@ -157,6 +157,14 @@ serve(async (req) => {
                         platform: 'zoho_recruit',
                         error: await res.text()
                     });
+                } else {
+                    const zohoData = await res.json();
+                    if (zohoData.error) {
+                        debugInfo.wpErrors.push({
+                            platform: 'zoho_recruit',
+                            error: zohoData.error
+                        });
+                    }
                 }
             } catch (err: any) {
                 debugInfo.wpErrors.push({ platform: 'zoho_recruit', error: err.message });
