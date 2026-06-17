@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import * as pdfjs from "https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.js";
 
 // Basic CORS headers
 const corsHeaders = {
@@ -13,24 +12,6 @@ async function logActivity(supabaseAdmin: any, entry: Record<string, unknown>) {
   if (error) {
     console.error("Failed to write activity log", error);
   }
-}
-
-async function extractTextFromPDF(pdfBuffer: ArrayBuffer): Promise<string> {
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) });
-  const pdf = await loadingTask.promise;
-  let fullText = "";
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      // @ts-ignore - items has str
-      .map((item) => item.str)
-      .join(" ");
-    fullText += pageText + "\n";
-  }
-
-  return fullText;
 }
 
 serve(async (req) => {
@@ -51,7 +32,7 @@ serve(async (req) => {
     // Fetch the applicant
     const { data: applicant, error: applicantError } = await supabaseAdmin
       .from("applicants")
-      .select("*, jobPostings(*)")
+      .select("*")
       .eq("id", applicantId)
       .single();
 
@@ -59,56 +40,35 @@ serve(async (req) => {
       throw new Error(`Applicant not found: ${applicantError?.message}`);
     }
 
-    const jobPosting = applicant.jobPostings;
-    if (!jobPosting) {
+    if (!applicant.jobPostingId) {
       throw new Error("Applicant is not associated with a job posting.");
     }
 
-    let resumeText = "";
-    
-    // Check if there is a resume URL and it is a PDF
-    if (applicant.resumeUrl && applicant.resumeUrl.toLowerCase().endsWith(".pdf")) {
-      console.log(`Downloading resume from: ${applicant.resumeUrl}`);
-      try {
-        let fetchUrl = applicant.resumeUrl;
-        
-        // If it's a relative path in Supabase storage, construct the full URL
-        if (!fetchUrl.startsWith("http")) {
-           // Wait, usually resumeUrl from Elementor is absolute, but if uploaded to Supabase it might be a path.
-           // In our frontend, it's just a file name if uploaded directly? Let's check.
-           // For now, we assume if it doesn't start with http, it's in the 'resumes' bucket
-           const { data: publicUrlData } = supabaseAdmin.storage.from("resumes").getPublicUrl(fetchUrl);
-           fetchUrl = publicUrlData.publicUrl;
-        }
+    const { data: jobPosting, error: jobPostingError } = await supabaseAdmin
+      .from("jobPostings")
+      .select("*")
+      .eq("id", applicant.jobPostingId)
+      .single();
 
-        const response = await fetch(fetchUrl);
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          resumeText = await extractTextFromPDF(arrayBuffer);
-          console.log(`Extracted ${resumeText.length} characters from PDF.`);
-        } else {
-          console.error(`Failed to download resume: ${response.statusText}`);
-        }
-      } catch (err) {
-        console.error("Error extracting text from PDF", err);
-      }
+    if (jobPostingError || !jobPosting) {
+      throw new Error(`Job posting not found: ${jobPostingError?.message}`);
     }
 
-    // If we couldn't get the resume text, fallback to cover letter or portfolio as "resume"
-    if (!resumeText.trim()) {
-      resumeText = [
-        applicant.coverLetter ? `Cover Letter:\n${applicant.coverLetter}` : "",
-        applicant.portfolio ? `Portfolio/Links:\n${applicant.portfolio}` : ""
-      ].join("\n\n").trim();
-    }
+    const rawSubmission = applicant.metadata?.rawSubmission || {};
+    const resumeText = [
+      applicant.coverLetter ? `Cover Letter:\n${applicant.coverLetter}` : "",
+      applicant.portfolio ? `Portfolio/Links:\n${applicant.portfolio}` : "",
+      applicant.resumeUrl ? `Resume URL:\n${applicant.resumeUrl}` : "",
+      applicant.resumeFileName ? `Resume File:\n${applicant.resumeFileName}` : "",
+      Object.keys(rawSubmission).length > 0 ? `Form Submission:\n${JSON.stringify(rawSubmission, null, 2)}` : "",
+    ].join("\n\n").trim();
 
     if (!resumeText) {
-      throw new Error("Could not extract any resume text or cover letter to evaluate.");
+      throw new Error("Could not find any applicant submission details to evaluate.");
     }
 
-    // Prepare prompt for OpenAI
-    const openAiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openAiKey) {
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) {
       throw new Error("OPENAI_API_KEY is missing");
     }
 
@@ -140,15 +100,18 @@ ${resumeText}
 Analyze the applicant and return the JSON evaluation.
 `;
 
+    const aiUrl = "https://api.openai.com/v1/chat/completions";
+    const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("AI_MODEL") || "gpt-4o-mini";
+
     console.log("Calling OpenAI API...");
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiResponse = await fetch(aiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${openAiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
+        model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -158,13 +121,13 @@ Analyze the applicant and return the JSON evaluation.
       }),
     });
 
-    if (!openAiResponse.ok) {
-      const errorText = await openAiResponse.text();
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
       throw new Error(`OpenAI API Error: ${errorText}`);
     }
 
-    const openAiData = await openAiResponse.json();
-    const evaluationStr = openAiData.choices[0].message.content;
+    const aiData = await aiResponse.json();
+    const evaluationStr = aiData.choices[0].message.content;
     let evaluation;
     try {
       evaluation = JSON.parse(evaluationStr);

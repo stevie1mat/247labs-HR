@@ -65,7 +65,7 @@ export default function ApplicantsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('applicants')
-        .select('id, name, email, phone, location, portfolio, coverLetter, resumeUrl, resumeFileName, formName, source, status, aiScore, aiSummary, jobPostingId, createdAt')
+        .select('id, name, email, phone, location, portfolio, coverLetter, resumeUrl, resumeFileName, formName, source, status, aiScore, aiSummary, educationScore, experienceScore, locationScore, skillsScore, jobPostingId, createdAt')
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
@@ -85,6 +85,10 @@ export default function ApplicantsPage() {
         jobPostingId: applicant.jobPostingId ? String(applicant.jobPostingId) : null,
         aiScore: applicant.aiScore,
         aiSummary: applicant.aiSummary || "",
+        educationScore: applicant.educationScore,
+        experienceScore: applicant.experienceScore,
+        locationScore: applicant.locationScore,
+        skillsScore: applicant.skillsScore,
         source: applicant.source || applicant.formName || "elementor",
       }));
     }
@@ -134,10 +138,18 @@ export default function ApplicantsPage() {
   const handleEvaluateApplicant = async (applicantId: string) => {
     setEvaluating((prev) => ({ ...prev, [applicantId]: true }));
     try {
-      const { data, error } = await supabase.functions.invoke("evaluate-applicant", {
-        body: { applicantId }
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/evaluate-applicant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ applicantId }),
       });
-      if (error) throw error;
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Failed to evaluate applicant.");
       if (data?.error) throw new Error(data.error);
 
       toast.success("The applicant's resume has been successfully scanned.");
