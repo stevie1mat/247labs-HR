@@ -8,7 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, Search } from "lucide-react";
+import { CheckCircle2, Loader2, Search, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type SourcePlatformOption = "zoho_recruit" | "wordpress";
 
@@ -40,6 +43,11 @@ export default function SourcesPage() {
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  const [configSourceId, setConfigSourceId] = useState<string | null>(null);
+  const [wpUrl, setWpUrl] = useState("");
+  const [wpUser, setWpUser] = useState("");
+  const [wpPass, setWpPass] = useState("");
 
   const { data: sources, isLoading, refetch } = useQuery({
     queryKey: ["postingSources"],
@@ -107,6 +115,19 @@ export default function SourcesPage() {
     onSuccess: (_, variables) => {
       refetch();
       toast.success(variables.isActive ? "Source activated." : "Source disabled.");
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const updateCredentials = useMutation({
+    mutationFn: async ({ id, credentials }: { id: string; credentials: any }) => {
+      const { error } = await supabase.from("postingSources").update({ credentials, isMockMode: false }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetch();
+      setConfigSourceId(null);
+      toast.success("Credentials updated successfully. Live mode is now active.");
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -266,6 +287,91 @@ export default function SourcesPage() {
                       onCheckedChange={value => setPlatformActive(platform, value)}
                     />
                   </div>
+
+                  {isActive && platform === "wordpress" && linkedSource && (
+                    <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Live Configuration</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          Configure your WordPress site details.
+                        </p>
+                      </div>
+                      <Dialog open={configSourceId === linkedSource.id} onOpenChange={(open) => {
+                        if (open) {
+                          setConfigSourceId(linkedSource.id);
+                          const creds = linkedSource.credentials || {};
+                          setWpUrl(creds.siteUrl || "");
+                          setWpUser(creds.username || "");
+                          setWpPass(creds.applicationPassword || "");
+                        } else {
+                          setConfigSourceId(null);
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8 gap-1">
+                            <Settings className="h-3.5 w-3.5" />
+                            Settings
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>WordPress Configuration</DialogTitle>
+                            <DialogDescription>
+                              Enter your WordPress site URL and application password to enable live publishing.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-4 py-4">
+                            <div className="grid gap-2">
+                              <Label htmlFor="wp-url">Site URL</Label>
+                              <Input
+                                id="wp-url"
+                                value={wpUrl}
+                                onChange={(e) => setWpUrl(e.target.value)}
+                                placeholder="https://your-wordpress-site.com"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="wp-user">Username</Label>
+                              <Input
+                                id="wp-user"
+                                value={wpUser}
+                                onChange={(e) => setWpUser(e.target.value)}
+                                placeholder="Admin username"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="wp-pass">Application Password</Label>
+                              <Input
+                                id="wp-pass"
+                                value={wpPass}
+                                onChange={(e) => setWpPass(e.target.value)}
+                                placeholder="xxxx xxxx xxxx xxxx"
+                                type="password"
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button
+                              onClick={() => {
+                                updateCredentials.mutate({
+                                  id: linkedSource.id,
+                                  credentials: {
+                                    siteUrl: wpUrl,
+                                    username: wpUser,
+                                    applicationPassword: wpPass,
+                                    postType: "career"
+                                  }
+                                });
+                              }}
+                              disabled={updateCredentials.isPending}
+                            >
+                              {updateCredentials.isPending ? "Saving..." : "Save Changes"}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  )}
 
                   <p className="mt-3 text-sm leading-6 text-slate-500">
                     {isActive ? "Available in the post job platform picker." : "Hidden from the post job platform picker until enabled."}
