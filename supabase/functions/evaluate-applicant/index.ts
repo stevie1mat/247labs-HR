@@ -72,17 +72,26 @@ serve(async (req) => {
       throw new Error("OPENAI_API_KEY is missing");
     }
 
-    const systemPrompt = `You are an expert HR Technical Recruiter. Your task is to evaluate a candidate's resume against a job description.
+    const systemPrompt = `You are an expert HR Technical Recruiter. Your task is to rigidly scrutinize a candidate's resume strictly against the provided job description template.
 You MUST respond with a valid JSON object matching this schema exactly:
 {
-  "aiSummary": "A 2-3 sentence summary of the applicant's fit for the role.",
+  "aiSummary": "A 2-3 sentence summary of the applicant's fit specifically mapped to the core requirements.",
   "aiScore": <number 0-100>,
   "educationScore": <number 0-100>,
   "experienceScore": <number 0-100>,
   "locationScore": <number 0-100>,
-  "skillsScore": <number 0-100>
+  "skillsScore": <number 0-100>,
+  "strengths": ["string", "string"],
+  "concerns": ["string", "string"],
+  "scoreRationale": {
+    "education": "string",
+    "experience": "string",
+    "location": "string",
+    "skills": "string",
+    "overall": "string"
+  }
 }
-Be objective. If a category (like location) is not mentioned in the resume but is required, give a neutral score (e.g., 50) or infer from context. Ensure aiScore is a weighted average of the sub-scores.`;
+Be brutally objective. If a requirement from the template is missing from the resume, flag it in "concerns" and penalize the score heavily. "strengths" should only list items that strictly match the template requirements. Provide clear, concise reasoning in "scoreRationale" for why each sub-score was given based on the evidence.`;
 
     const userPrompt = `
 JOB POSTING:
@@ -145,6 +154,15 @@ Analyze the applicant and return the JSON evaluation.
         experienceScore: evaluation.experienceScore,
         locationScore: evaluation.locationScore,
         skillsScore: evaluation.skillsScore,
+        metadata: {
+          ...applicant.metadata,
+          evaluationDetails: {
+            strengths: evaluation.strengths || [],
+            concerns: evaluation.concerns || [],
+            scoreRationale: evaluation.scoreRationale || {},
+            resumeTextLength: resumeText.length
+          }
+        },
         updatedAt: new Date().toISOString(),
       })
       .eq("id", applicantId);

@@ -2,7 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import pdfParse from "pdf-parse";
 
 function json(res, status, body) {
-  res.status(status).setHeader("Content-Type", "application/json");
+  if (typeof res.status === "function") {
+    res.status(status).setHeader("Content-Type", "application/json");
+  } else {
+    res.writeHead(status, { "Content-Type": "application/json" });
+  }
   res.end(JSON.stringify(body));
 }
 
@@ -69,10 +73,10 @@ function normalizeEvaluation(value) {
 }
 
 function buildEvaluationMessages({ applicant, jobPosting, resumeText }) {
-  const systemPrompt = `You are an expert HR Technical Recruiter. Evaluate the candidate's resume against the job posting.
+  const systemPrompt = `You are an expert HR Technical Recruiter. Your task is to rigidly scrutinize a candidate's resume strictly against the provided job description template.
 Return only valid JSON with this exact schema:
 {
-  "aiSummary": "A 2-3 sentence summary of the applicant's fit for the role.",
+  "aiSummary": "A 2-3 sentence summary of the applicant's fit specifically mapped to the core requirements.",
   "aiScore": 0,
   "educationScore": 0,
   "experienceScore": 0,
@@ -85,10 +89,10 @@ Return only valid JSON with this exact schema:
     "skills": "Why this skills score was assigned.",
     "overall": "Why this overall score was assigned."
   },
-  "strengths": ["Specific evidence from the resume that supports the score."],
-  "concerns": ["Specific gaps or uncertainties that lowered the score."]
+  "strengths": ["Specific template matches"],
+  "concerns": ["Missing requirements or gaps"]
 }
-Use scores from 0 to 100. Score based on evidence in the resume text and the role requirements.`;
+Use scores from 0 to 100. Score based on evidence in the resume text and the role requirements. Be brutally objective and penalize heavily for missing requirements.`;
 
   const userPrompt = `
 JOB POSTING:

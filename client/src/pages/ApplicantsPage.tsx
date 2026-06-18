@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Reorder, useDragControls } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound, CircleHelp } from "lucide-react";
+import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound, CircleHelp, GripVertical, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -28,6 +29,50 @@ const sourceBadgeMap: Record<string, string> = {
   upwork: "Upwork",
 };
 
+function JobPostingItem({ posting, isSelected, count, onClick }: any) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item value={posting} dragListener={false} dragControls={controls} as="div" className="relative group/item">
+      <div 
+        className="absolute left-[-8px] top-1/2 -translate-y-1/2 p-2 opacity-0 group-hover/item:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 z-10"
+        onPointerDown={(e) => controls.start(e)}
+      >
+        <GripVertical className="h-4 w-4" />
+      </div>
+      <button
+        onClick={onClick}
+        className={cn(
+          "w-full text-left px-3 py-3 flex items-start gap-3 rounded-xl transition-all duration-200 border",
+          isSelected 
+            ? "bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))] border-slate-200/80 shadow-sm" 
+            : "border-transparent hover:bg-slate-50 hover:border-slate-200/50"
+        )}
+      >
+        <div className={cn(
+          "mt-0.5 p-2 rounded-lg shrink-0 flex items-center justify-center", 
+          isSelected ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-500"
+        )}>
+          <Briefcase className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0 pr-1">
+          <h3 className={cn("text-sm font-semibold truncate", isSelected ? "text-slate-950" : "text-slate-700")}>
+            {posting.title}
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5 truncate uppercase tracking-wider font-medium">
+            {posting.salaryRange || 'Open Salary'}
+          </p>
+        </div>
+        {count > 0 && (
+          <Badge className={cn("rounded-lg border h-6 px-2 text-xs", isSelected ? "bg-primary text-white border-primary" : "bg-slate-100 text-slate-600 border-slate-200")}>
+            {count}
+          </Badge>
+        )}
+      </button>
+    </Reorder.Item>
+  );
+}
+
 export default function ApplicantsPage() {
   const [location] = useLocation();
   const [selectedPostingId, setSelectedPostingId] = useState<string | 'unsorted' | null>(null);
@@ -37,8 +82,26 @@ export default function ApplicantsPage() {
   const [sortBy, setSortBy] = useState("recent");
   const [evaluating, setEvaluating] = useState<Record<string, boolean>>({});
   const [scoreDialogApplicant, setScoreDialogApplicant] = useState<any | null>(null);
+  const [localPostings, setLocalPostings] = useState<any[]>([]);
   
   const queryClient = useQueryClient();
+
+  const updateOrderMutation = useMutation({
+    mutationFn: async (updates: { id: string; orderIndex: number }[]) => {
+      await Promise.all(
+        updates.map(u => supabase.from('jobPostings').update({ orderIndex: u.orderIndex }).eq('id', u.id))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+    }
+  });
+
+  const handleReorder = (newOrder: any[]) => {
+    setLocalPostings(newOrder);
+    const updates = newOrder.map((p, index) => ({ id: p.id, orderIndex: index }));
+    updateOrderMutation.mutate(updates);
+  };
 
   // Fetch local job postings. WordPress/Elementor applicants are stored locally.
   const { data: postings, isLoading: isLoadingPostings } = useQuery({
@@ -46,7 +109,8 @@ export default function ApplicantsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('jobPostings')
-        .select('id, title, salaryRange, createdAt, postedAt, status')
+        .select('id, title, salaryRange, createdAt, postedAt, status, orderIndex')
+        .order('orderIndex', { ascending: true })
         .order('createdAt', { ascending: false });
 
       if (error) throw error;
@@ -98,7 +162,13 @@ export default function ApplicantsPage() {
   });
 
   const isLoading = isLoadingPostings || isLoadingApplicants;
-  const safePostings = [...(postings || [])].sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  const safePostings = postings || [];
+
+  useEffect(() => {
+    if (postings) {
+      setLocalPostings(postings);
+    }
+  }, [postings]);
   const selectedPostingFromQuery = (() => {
     try {
       const url = new URL(location, "http://localhost");
@@ -245,45 +315,23 @@ export default function ApplicantsPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-4 space-y-1 pr-2">
-          {safePostings.map((posting: any) => {
-            const isSelected = selectedPostingId === posting.id;
-            const count = groupedApplicants[posting.id]?.length || 0;
-            const newCount = groupedApplicants[posting.id]?.filter((a: any) => a.status === 'new')?.length || 0;
-            
-            return (
-              <button
-                key={posting.id}
-                onClick={() => setSelectedPostingId(posting.id)}
-                className={cn(
-                  "w-full text-left px-3 py-3 flex items-start gap-3 rounded-xl transition-all duration-200 border",
-                  isSelected 
-                    ? "bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))] border-slate-200/80 shadow-sm" 
-                    : "border-transparent hover:bg-slate-50 hover:border-slate-200/50"
-                )}
-              >
-                <div className={cn(
-                  "mt-0.5 p-2 rounded-lg shrink-0 flex items-center justify-center", 
-                  isSelected ? "bg-primary/10 text-primary" : "bg-slate-100 text-slate-500"
-                )}>
-                  <Briefcase className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0 pr-1">
-                  <h3 className={cn("text-sm font-semibold truncate", isSelected ? "text-slate-950" : "text-slate-700")}>
-                    {posting.title}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5 truncate uppercase tracking-wider font-medium">
-                    {posting.salaryRange || 'Open Salary'}
-                  </p>
-                </div>
-                {count > 0 && (
-                  <Badge className={cn("rounded-lg border h-6 px-2 text-xs", isSelected ? "bg-primary text-white border-primary" : "bg-slate-100 text-slate-600 border-slate-200")}>
-                    {count}
-                  </Badge>
-                )}
-              </button>
-            );
-          })}
+          <div className="flex-1 overflow-y-auto py-4 pr-2">
+            <Reorder.Group axis="y" values={localPostings} onReorder={handleReorder} className="space-y-1">
+              {localPostings.map((posting: any) => {
+                const isSelected = selectedPostingId === posting.id;
+                const count = groupedApplicants[posting.id]?.length || 0;
+                
+                return (
+                  <JobPostingItem 
+                    key={posting.id} 
+                    posting={posting} 
+                    isSelected={isSelected} 
+                    count={count} 
+                    onClick={() => setSelectedPostingId(posting.id)} 
+                  />
+                );
+              })}
+            </Reorder.Group>
 
           <div className="mt-4 pt-4 border-t border-slate-200/70">
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 pl-2">Unmatched</p>
@@ -558,65 +606,93 @@ export default function ApplicantsPage() {
         </div>
       </div>
       <Dialog open={Boolean(scoreDialogApplicant)} onOpenChange={(open) => !open && setScoreDialogApplicant(null)}>
-        <DialogContent className="max-w-2xl rounded-xl border border-slate-200 bg-white">
-          <DialogHeader>
-            <DialogTitle>Score Rationale</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-h-[90vh] w-[90vw] max-w-[90vw] sm:max-w-3xl lg:max-w-4xl overflow-y-auto rounded-2xl border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(248,250,252,1))] p-0 shadow-2xl">
+          <div className="border-b border-slate-200/60 bg-white/50 px-6 py-5 backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#0f172a,#1e293b)] text-white shadow-lg">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold tracking-tight text-slate-950">AI Scrutiny Report</DialogTitle>
+                <p className="mt-0.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Deep Template Analysis</p>
+              </div>
+            </div>
+          </div>
 
           {scoreDialogApplicant ? (
-            <div className="space-y-5">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">{scoreDialogApplicant.name || "Applicant"}</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-700">
-                      {scoreDialogApplicant.evaluationDetails?.scoreRationale?.overall || scoreDialogApplicant.aiSummary || "No rationale has been saved yet."}
-                    </p>
-                  </div>
-                  <div className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 text-lg font-bold text-amber-700">
-                    {scoreDialogApplicant.aiScore || 0}/100
-                  </div>
+            <div className="p-6 space-y-8">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6 rounded-2xl border border-indigo-200/60 bg-[linear-gradient(180deg,rgba(238,242,255,0.6),rgba(224,231,255,0.4))] p-6 shadow-sm">
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold tracking-tight text-slate-950">{scoreDialogApplicant.name || "Applicant"}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-indigo-900/80">
+                    {scoreDialogApplicant.evaluationDetails?.scoreRationale?.overall || scoreDialogApplicant.aiSummary || "No rationale has been saved yet."}
+                  </p>
+                </div>
+                <div className="shrink-0 flex flex-col items-center justify-center rounded-xl border border-indigo-200 bg-white px-8 py-5 shadow-sm">
+                  <span className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-400">Match Score</span>
+                  <span className="mt-1 text-4xl font-black text-indigo-950">{scoreDialogApplicant.aiScore || 0}<span className="text-2xl text-indigo-300">/100</span></span>
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 {scoreRows.map((row) => (
-                  <div key={row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{row.label}</p>
-                      <p className="text-lg font-bold text-slate-950">{row.score}</p>
+                  <div key={row.label} className="group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md">
+                    <div className="absolute right-0 top-0 h-full w-1 bg-slate-100 group-hover:bg-indigo-500 transition-colors" />
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{row.label}</p>
+                      <div className="flex items-center justify-center rounded-lg bg-slate-50 px-3 py-1 font-bold text-slate-700 border border-slate-100">
+                        {row.score}
+                      </div>
                     </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">{row.rationale}</p>
+                    <p className="text-sm leading-relaxed text-slate-600">{row.rationale}</p>
                   </div>
                 ))}
               </div>
 
-              {scoreDialogApplicant.evaluationDetails?.strengths?.length ? (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Strengths</p>
-                  <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
-                    {scoreDialogApplicant.evaluationDetails.strengths.map((item: string, index: number) => (
-                      <li key={`${item}-${index}`} className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              {(scoreDialogApplicant.evaluationDetails?.strengths?.length || scoreDialogApplicant.evaluationDetails?.concerns?.length) && (
+                <div className="grid gap-6 md:grid-cols-2 items-start">
+                  {scoreDialogApplicant.evaluationDetails?.strengths?.length ? (
+                    <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/50 p-5">
+                      <div className="flex items-center gap-2 mb-4">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                        <h4 className="font-bold text-emerald-900">Template Matches</h4>
+                      </div>
+                      <ul className="space-y-3">
+                        {scoreDialogApplicant.evaluationDetails.strengths.map((item: string, index: number) => (
+                          <li key={`strength-${index}`} className="flex items-start gap-3 text-sm leading-relaxed text-emerald-800">
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : <div />}
 
-              {scoreDialogApplicant.evaluationDetails?.concerns?.length ? (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Concerns</p>
-                  <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
-                    {scoreDialogApplicant.evaluationDetails.concerns.map((item: string, index: number) => (
-                      <li key={`${item}-${index}`} className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">{item}</li>
-                    ))}
-                  </ul>
+                  {scoreDialogApplicant.evaluationDetails?.concerns?.length ? (
+                    <div className="rounded-2xl border border-rose-200/60 bg-rose-50/50 p-5">
+                      <div className="flex items-center gap-2 mb-4">
+                        <AlertTriangle className="h-5 w-5 text-rose-500" />
+                        <h4 className="font-bold text-rose-900">Missing / Concerns</h4>
+                      </div>
+                      <ul className="space-y-3">
+                        {scoreDialogApplicant.evaluationDetails.concerns.map((item: string, index: number) => (
+                          <li key={`concern-${index}`} className="flex items-start gap-3 text-sm leading-relaxed text-rose-800">
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : <div />}
                 </div>
-              ) : null}
+              )}
 
               {typeof scoreDialogApplicant.evaluationDetails?.resumeTextLength === "number" ? (
-                <p className="text-xs text-slate-500">
-                  Resume text extracted: {scoreDialogApplicant.evaluationDetails.resumeTextLength.toLocaleString()} characters
-                </p>
+                <div className="text-center pt-4 border-t border-slate-100">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Engine processed {scoreDialogApplicant.evaluationDetails.resumeTextLength.toLocaleString()} characters of resume text
+                  </p>
+                </div>
               ) : null}
             </div>
           ) : null}

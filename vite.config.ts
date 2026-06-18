@@ -149,7 +149,38 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+/**
+ * Custom Vite plugin to serve Vercel serverless functions locally
+ */
+function vitePluginApiRoutes(): Plugin {
+  return {
+    name: "api-routes",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/evaluate-applicant", (req, res) => {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk.toString();
+        });
+        req.on("end", async () => {
+          try {
+            if (body) {
+              (req as any).body = JSON.parse(body);
+            }
+            // Dynamically import the API route (bypass cache for dev)
+            const apiPath = path.resolve(import.meta.dirname, "api", "evaluate-applicant.js");
+            const apiModule = await import(`${apiPath}?t=${Date.now()}`);
+            await apiModule.default(req, res);
+          } catch (e) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: String(e) }));
+          }
+        });
+      });
+    },
+  };
+}
+
+const plugins = [react(), tailwindcss(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginApiRoutes()];
 
 export default defineConfig({
   plugins,
