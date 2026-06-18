@@ -359,7 +359,7 @@ export default function SourcesPage() {
                                     siteUrl: wpUrl,
                                     username: wpUser,
                                     applicationPassword: wpPass,
-                                    postType: "career"
+                                    postType: "careers"
                                   }
                                 });
                               }}
