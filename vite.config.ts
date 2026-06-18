@@ -156,7 +156,11 @@ function vitePluginApiRoutes(): Plugin {
   return {
     name: "api-routes",
     configureServer(server: ViteDevServer) {
-      server.middlewares.use("/api/evaluate-applicant", (req, res) => {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith("/api/")) {
+          return next();
+        }
+        
         let body = "";
         req.on("data", (chunk) => {
           body += chunk.toString();
@@ -166,8 +170,17 @@ function vitePluginApiRoutes(): Plugin {
             if (body) {
               (req as any).body = JSON.parse(body);
             }
+            
+            // Extract the endpoint name (e.g., /api/evaluate-applicant -> evaluate-applicant)
+            const endpoint = req.url!.split("?")[0].replace("/api/", "");
+            
             // Dynamically import the API route (bypass cache for dev)
-            const apiPath = path.resolve(import.meta.dirname, "api", "evaluate-applicant.js");
+            const apiPath = path.resolve(import.meta.dirname, "api", `${endpoint}.js`);
+            if (!fs.existsSync(apiPath)) {
+              res.writeHead(404, { "Content-Type": "application/json" });
+              return res.end(JSON.stringify({ error: "API route not found locally" }));
+            }
+            
             const apiModule = await import(`${apiPath}?t=${Date.now()}`);
             await apiModule.default(req, res);
           } catch (e) {
