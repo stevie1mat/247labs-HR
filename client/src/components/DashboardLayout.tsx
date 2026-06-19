@@ -51,6 +51,7 @@ import { GlobalSearch } from "./GlobalSearch";
 const hiringManagerItems = [
   { icon: FileText, label: "Job Templates", path: "/templates" },
   { icon: Briefcase, label: "My Job Postings", path: "/my-postings" },
+  { icon: ListChecks, label: "Screening Questions", path: "/screening-questions" },
   { icon: Users, label: "Applicants", path: "/applicants" },
 ];
 

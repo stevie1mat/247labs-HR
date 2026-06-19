@@ -18,6 +18,7 @@ import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileTex
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const sourceBadgeMap: Record<string, string> = {
   elementor: "WordPress",
@@ -83,6 +84,8 @@ export default function ApplicantsPage() {
   const [evaluating, setEvaluating] = useState<Record<string, boolean>>({});
   const [scoreDialogApplicant, setScoreDialogApplicant] = useState<any | null>(null);
   const [localPostings, setLocalPostings] = useState<any[]>([]);
+  const [selectedApplicantIds, setSelectedApplicantIds] = useState<Set<string>>(new Set());
+  const [isSendingQuestions, setIsSendingQuestions] = useState(false);
   
   const queryClient = useQueryClient();
 
@@ -169,6 +172,11 @@ export default function ApplicantsPage() {
       setLocalPostings(postings);
     }
   }, [postings]);
+
+  // Clear selections when filters change
+  useEffect(() => {
+    setSelectedApplicantIds(new Set());
+  }, [selectedPostingId, search, statusFilter, resumeFilter]);
   const selectedPostingFromQuery = (() => {
     try {
       const url = new URL(location, "http://localhost");
@@ -233,6 +241,94 @@ export default function ApplicantsPage() {
       toast.error(err.message || "Failed to evaluate the applicant.");
     } finally {
       setEvaluating((prev) => ({ ...prev, [applicantId]: false }));
+    }
+  };
+
+  const handleToggleApplicant = (id: string) => {
+    const newSelected = new Set(selectedApplicantIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedApplicantIds(newSelected);
+  };
+
+  const handleSelectAll = (filteredApplicantsList: any[]) => {
+    if (selectedApplicantIds.size === filteredApplicantsList.length && filteredApplicantsList.length > 0) {
+      setSelectedApplicantIds(new Set());
+    } else {
+      setSelectedApplicantIds(new Set(filteredApplicantsList.map(a => a.id)));
+    }
+  };
+
+  const handleSendQuestions = async () => {
+    if (selectedApplicantIds.size === 0) return;
+    
+    // Get all selected applicant objects
+    const selectedList = applicants?.filter(a => selectedApplicantIds.has(a.id)) || [];
+    
+    // Check if they all belong to the same job posting
+    const jobPostingIds = new Set(selectedList.map(a => a.jobPostingId));
+    if (jobPostingIds.size > 1) {
+      toast.error("Please select applicants from only one job posting at a time.");
+      return;
+    }
+
+    const targetPostingId = Array.from(jobPostingIds)[0];
+    if (!targetPostingId || targetPostingId === 'unsorted') {
+      toast.error("Cannot send questions to unsorted applicants.");
+      return;
+    }
+
+    setIsSendingQuestions(true);
+    try {
+      // Fetch screening questions
+      const { data, error } = await supabase
+        .from('jobScreeningQuestions')
+        .select('questions')
+        .eq('jobPostingId', targetPostingId)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      if (!data?.questions || data.questions.length === 0) {
+        toast.error("No screening questions found for this job posting.");
+        return;
+      }
+
+      // Format questions into text body
+      const questionText = data.questions.map((q: any, i: number) => `${i + 1}. ${q.title}\n${q.prompt}\n`).join('\n');
+      const body = `Hello,\n\nThank you for applying. As a next step, please reply to this email with answers to the following screening questions:\n\n${questionText}\nBest regards,\n`;
+      
+      const bccEmails = selectedList.map(a => a.email).filter(Boolean).join(',');
+      if (!bccEmails) {
+        toast.error("None of the selected applicants have an email address.");
+        return;
+      }
+
+      const subject = `Next Steps: Screening Questions for ${getSelectedPostingTitle()}`;
+      
+      // Outlook Web deep links DO NOT support the 'bcc' parameter. 
+      // It will just drop it. We must use 'to' or ask the user to paste them.
+      // Since 'to' exposes emails, we will copy the emails to the clipboard!
+      const outlookUrl = `https://outlook.office.com/mail/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      
+      // Copy emails to clipboard
+      try {
+        await navigator.clipboard.writeText(bccEmails);
+        toast.success("Emails copied to clipboard! Please PASTE them into the BCC field in Outlook.", { duration: 10000 });
+      } catch (err) {
+        toast.success("Opening Outlook...");
+      }
+
+      // Open Outlook Web in a new tab
+      window.open(outlookUrl, '_blank');
+      
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to fetch screening questions.");
+    } finally {
+      setIsSendingQuestions(false);
     }
   };
 
@@ -428,17 +524,45 @@ export default function ApplicantsPage() {
 
         <div className="flex-1 overflow-y-auto pb-4">
           <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/88 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-            <div className="border-b border-slate-200/70 px-6 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
-                  {filteredApplicants.length} result{filteredApplicants.length === 1 ? "" : "s"}
-                </Badge>
-                {search.trim() ? (
-                  <Badge variant="outline" className="rounded-lg border-primary/20 bg-primary/5 px-2.5 py-1 text-xs text-primary">
-                    Search active
+            <div className="border-b border-slate-200/70 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 pr-4 border-r border-slate-200">
+                  <Checkbox 
+                    id="select-all" 
+                    checked={filteredApplicants.length > 0 && selectedApplicantIds.size === filteredApplicants.length}
+                    onCheckedChange={() => handleSelectAll(filteredApplicants)}
+                  />
+                  <label htmlFor="select-all" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Select All
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">
+                    {filteredApplicants.length} result{filteredApplicants.length === 1 ? "" : "s"}
                   </Badge>
-                ) : null}
+                  {search.trim() ? (
+                    <Badge variant="outline" className="rounded-lg border-primary/20 bg-primary/5 px-2.5 py-1 text-xs text-primary">
+                      Search active
+                    </Badge>
+                  ) : null}
+                  {selectedApplicantIds.size > 0 && (
+                    <Badge variant="outline" className="rounded-lg border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700">
+                      {selectedApplicantIds.size} selected
+                    </Badge>
+                  )}
+                </div>
               </div>
+              
+              {selectedApplicantIds.size > 0 && (
+                <Button 
+                  onClick={handleSendQuestions}
+                  disabled={isSendingQuestions}
+                  className="gap-2 shadow-sm bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {isSendingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  Send Questions via Outlook
+                </Button>
+              )}
             </div>
 
             <div className="grid gap-4 p-4 sm:p-5">
@@ -464,9 +588,16 @@ export default function ApplicantsPage() {
                   <div className="flex flex-col gap-5">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg font-semibold tracking-[-0.02em] text-slate-950">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="pt-1">
+                            <Checkbox 
+                              checked={selectedApplicantIds.has(applicant.id)}
+                              onCheckedChange={() => handleToggleApplicant(applicant.id)}
+                            />
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-lg font-semibold tracking-[-0.02em] text-slate-950">
                               {applicant.name || applicant.id.substring(0, 8)}
                             </h3>
                             <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">
@@ -521,6 +652,7 @@ export default function ApplicantsPage() {
                               </a>
                             ) : null}
                           </div>
+                        </div>
                         </div>
 
                         <div className="shrink-0 flex flex-col items-end">

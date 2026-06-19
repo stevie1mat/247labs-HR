@@ -16,6 +16,7 @@ import ComponentShowcase from "./pages/ComponentShowcase";
 import HomePage from "./pages/Home";
 import ExtensionInstallPage from "./pages/ExtensionInstallPage";
 import SearchPage from "./pages/SearchPage";
+import ScreeningQuestionsPage from "./pages/ScreeningQuestionsPage";
 
 import { AuthPage } from "./pages/AuthPage";
 
@@ -36,6 +37,7 @@ function Router() {
             <Route path="/posting-logs" component={PostingLogsPage} />
             <Route path="/extension-install" component={ExtensionInstallPage} />
             <Route path="/search" component={SearchPage} />
+            <Route path="/screening-questions" component={ScreeningQuestionsPage} />
             <Route path="/components" component={ComponentShowcase} />
             <Route component={NotFound} />
           </Switch>
