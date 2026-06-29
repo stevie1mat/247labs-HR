@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound, CircleHelp, GripVertical, AlertTriangle } from "lucide-react";
+import { Loader2, Briefcase, Sparkles, CheckCircle2, Clock, Inbox, Mail, FileText, ExternalLink, MapPin, Search, Filter, UserRound, CircleHelp, GripVertical, AlertTriangle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -97,6 +97,23 @@ export default function ApplicantsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobPostings'] });
+    }
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string, status: string }) => {
+      const { error } = await supabase
+        .from('applicants')
+        .update({ status })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applicants'] });
+      toast.success("Applicant status updated");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update status");
     }
   });
 
@@ -352,8 +369,9 @@ export default function ApplicantsPage() {
 
       const matchesStatus =
         statusFilter === "all" ||
-        (statusFilter === "new" && applicant.status !== "reviewed") ||
-        (statusFilter === "reviewed" && applicant.status === "reviewed");
+        (statusFilter === "new" && (!applicant.status || applicant.status === "new")) ||
+        (statusFilter === "reviewed" && applicant.status === "reviewed") ||
+        (statusFilter === "unselected" && applicant.status === "unselected");
 
       const matchesResume =
         resumeFilter === "all" ||
@@ -494,6 +512,7 @@ export default function ApplicantsPage() {
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="new">New</SelectItem>
                   <SelectItem value="reviewed">Reviewed</SelectItem>
+                  <SelectItem value="unselected">Not Selected</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -607,15 +626,29 @@ export default function ApplicantsPage() {
                             <Badge variant="outline" className="rounded-lg border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">
                               {sourceLabel}
                             </Badge>
-                            {applicant.status === 'reviewed' ? (
-                              <Badge className="rounded-lg border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700 text-xs font-semibold">
-                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Reviewed
-                              </Badge>
-                            ) : (
-                              <Badge className="rounded-lg border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-700 text-xs font-semibold">
-                                <Clock className="mr-1 h-3.5 w-3.5" /> New
-                              </Badge>
-                            )}
+                            {(() => {
+                              const status = applicant.status || 'new';
+                              const statusClasses = 
+                                status === 'reviewed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
+                                status === 'unselected' ? 'border-rose-200 bg-rose-50 text-rose-700' :
+                                'border-sky-200 bg-sky-50 text-sky-700';
+
+                              return (
+                                <Select 
+                                  value={status} 
+                                  onValueChange={(val) => updateStatusMutation.mutate({ id: applicant.id, status: val })}
+                                >
+                                  <SelectTrigger className={cn("h-6 rounded-lg px-2 py-0 text-xs font-semibold focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 w-[145px] shadow-none [&>span]:flex [&>span]:items-center [&>span]:gap-1.5 border", statusClasses)}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="new"><div className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />New</div></SelectItem>
+                                    <SelectItem value="reviewed"><div className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Reviewed</div></SelectItem>
+                                    <SelectItem value="unselected"><div className="flex items-center gap-1.5"><XCircle className="h-3.5 w-3.5 text-rose-500" />Not Selected</div></SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              );
+                            })()}
                           </div>
                           <p className="mt-2 text-sm leading-6 text-slate-600 max-w-3xl">
                             {applicant.aiSummary || "This applicant has not been fully evaluated yet. Pending AI analysis."}
