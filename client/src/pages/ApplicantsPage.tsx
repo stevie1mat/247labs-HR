@@ -250,9 +250,11 @@ export default function ApplicantsPage() {
       if (!response.ok) throw new Error(data?.error || "Failed to evaluate applicant.");
       if (data?.error) throw new Error(data.error);
 
-      toast.success("The applicant's resume has been successfully scanned.");
-      queryClient.invalidateQueries({ queryKey: ['applicants'] });
-      queryClient.invalidateQueries({ queryKey: ['activityLogs'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['applicants'] }),
+        queryClient.invalidateQueries({ queryKey: ['activityLogs'] }),
+      ]);
+      toast.success(`Resume scanned successfully (${data.resumeTextLength || 0} characters read).`);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to evaluate the applicant.");

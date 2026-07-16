@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import pdfParse from "pdf-parse";
+import { inflateRawSync } from "node:zlib";
 
 function json(res, status, body) {
   if (typeof res.status === "function") {
@@ -28,22 +29,102 @@ function getSupabaseClient(req) {
   });
 }
 
-async function extractPdfText(resumeUrl) {
+function extractDocxText(buffer) {
+  // DOCX files are ZIP archives. Read the central directory to locate the
+  // compressed Word document XML without requiring another runtime package.
+  let endOfDirectory = -1;
+  const searchStart = Math.max(0, buffer.length - 65_557);
+  for (let offset = buffer.length - 22; offset >= searchStart; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) {
+      endOfDirectory = offset;
+      break;
+    }
+  }
+
+  if (endOfDirectory < 0) throw new Error("Invalid DOCX: ZIP directory was not found.");
+
+  const entryCount = buffer.readUInt16LE(endOfDirectory + 10);
+  let offset = buffer.readUInt32LE(endOfDirectory + 16);
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error("Invalid DOCX: malformed ZIP directory.");
+    }
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const fileName = buffer.toString("utf8", offset + 46, offset + 46 + fileNameLength);
+
+    if (fileName === "word/document.xml") {
+      if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+        throw new Error("Invalid DOCX: malformed document entry.");
+      }
+
+      const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+      const xmlBuffer = compressionMethod === 0
+        ? compressed
+        : compressionMethod === 8
+          ? inflateRawSync(compressed)
+          : null;
+
+      if (!xmlBuffer) {
+        throw new Error(`Unsupported DOCX compression method: ${compressionMethod}.`);
+      }
+
+      return xmlBuffer
+        .toString("utf8")
+        .replace(/<w:tab\s*\/>/g, "\t")
+        .replace(/<w:(?:br|cr)(?:\s[^>]*)?\s*\/>/g, "\n")
+        .replace(/<\/w:p>/g, "\n")
+        .replace(/<\/w:tc>/g, "\t")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  throw new Error("Invalid DOCX: word/document.xml was not found.");
+}
+
+async function extractResumeText(resumeUrl, resumeFileName) {
   if (!resumeUrl) return "";
 
   const response = await fetch(resumeUrl);
   if (!response.ok) {
-    throw new Error(`Could not download resume PDF (${response.status}).`);
+    throw new Error(`Could not download resume (${response.status}).`);
   }
 
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("pdf") && !resumeUrl.toLowerCase().includes(".pdf")) {
-    return "";
-  }
-
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
   const arrayBuffer = await response.arrayBuffer();
-  const parsed = await pdfParse(Buffer.from(arrayBuffer));
-  return parsed.text || "";
+  const buffer = Buffer.from(arrayBuffer);
+  const name = String(resumeFileName || resumeUrl).toLowerCase().split("?")[0];
+  const isPdf = name.endsWith(".pdf") || contentType.includes("application/pdf") ||
+    buffer.subarray(0, 4).toString("ascii") === "%PDF";
+  const isDocx = name.endsWith(".docx") || contentType.includes("application/vnd.openxmlformats") ||
+    (buffer[0] === 0x50 && buffer[1] === 0x4b);
+
+  if (isPdf) {
+    const parsed = await pdfParse(buffer);
+    return parsed.text || "";
+  }
+  if (isDocx) return extractDocxText(buffer);
+
+  throw new Error("Unsupported resume format. Upload a PDF or DOCX file.");
 }
 
 function normalizeEvaluation(value) {
@@ -110,7 +191,7 @@ Portfolio: ${applicant.portfolio || "N/A"}
 Cover Letter:
 ${applicant.coverLetter || "N/A"}
 
-RESUME TEXT EXTRACTED FROM PDF:
+RESUME TEXT EXTRACTED FROM THE UPLOADED FILE:
 ${resumeText || "No parseable resume text was found."}
 `;
 
@@ -227,7 +308,10 @@ export default async function handler(req, res) {
       throw new Error(`Job posting not found: ${jobPostingError?.message || "No posting returned"}`);
     }
 
-    const resumeText = await extractPdfText(applicant.resumeUrl);
+    const resumeText = await extractResumeText(applicant.resumeUrl, applicant.resumeFileName);
+    if (!resumeText.trim()) {
+      throw new Error("The resume file did not contain readable text.");
+    }
     const evaluation = await evaluateWithAi({ applicant, jobPosting, resumeText });
 
     const { error: updateError } = await supabase

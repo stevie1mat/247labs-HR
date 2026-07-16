@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { extractResumeText } from "../_shared/extractText.ts";
 
-// Basic CORS headers
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -54,12 +54,23 @@ serve(async (req) => {
       throw new Error(`Job posting not found: ${jobPostingError?.message}`);
     }
 
+    // Extract actual text content from the uploaded resume file
+    let extractedResumeContent = "";
+    if (applicant.resumeUrl) {
+      console.log(`[EVAL] Extracting resume for ${applicant.name} from: ${applicant.resumeUrl}`);
+      extractedResumeContent = await extractResumeText(
+        applicant.resumeUrl,
+        applicant.resumeFileName,
+      );
+      console.log(`[EVAL] Extracted ${extractedResumeContent.length} resume characters`);
+    }
+
     const rawSubmission = applicant.metadata?.rawSubmission || {};
     const resumeText = [
       applicant.coverLetter ? `Cover Letter:\n${applicant.coverLetter}` : "",
       applicant.portfolio ? `Portfolio/Links:\n${applicant.portfolio}` : "",
-      applicant.resumeUrl ? `Resume URL:\n${applicant.resumeUrl}` : "",
-      applicant.resumeFileName ? `Resume File:\n${applicant.resumeFileName}` : "",
+      extractedResumeContent ? `Resume Content:\n${extractedResumeContent}` : "",
+      applicant.resumeFileName ? `Resume File Name: ${applicant.resumeFileName}` : "",
       Object.keys(rawSubmission).length > 0 ? `Form Submission:\n${JSON.stringify(rawSubmission, null, 2)}` : "",
     ].join("\n\n").trim();
 
@@ -112,7 +123,7 @@ Analyze the applicant and return the JSON evaluation.
     const aiUrl = "https://api.openai.com/v1/chat/completions";
     const model = Deno.env.get("OPENAI_MODEL") || Deno.env.get("AI_MODEL") || "gpt-4o-mini";
 
-    console.log("Calling OpenAI API...");
+    console.log("[EVAL] Calling OpenAI API...");
     const aiResponse = await fetch(aiUrl, {
       method: "POST",
       headers: {
@@ -160,7 +171,8 @@ Analyze the applicant and return the JSON evaluation.
             strengths: evaluation.strengths || [],
             concerns: evaluation.concerns || [],
             scoreRationale: evaluation.scoreRationale || {},
-            resumeTextLength: resumeText.length
+            resumeTextLength: extractedResumeContent.length,
+            evaluatedAt: new Date().toISOString(),
           }
         },
         updatedAt: new Date().toISOString(),
