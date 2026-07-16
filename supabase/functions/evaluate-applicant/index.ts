@@ -54,7 +54,7 @@ serve(async (req) => {
       throw new Error(`Job posting not found: ${jobPostingError?.message}`);
     }
 
-    // Extract actual text content from the uploaded resume file
+    // Extract actual text content from the uploaded resume
     let extractedResumeContent = "";
     if (applicant.resumeUrl) {
       console.log(`[EVAL] Extracting resume for ${applicant.name} from: ${applicant.resumeUrl}`);
