@@ -120,7 +120,12 @@ export default function ScreeningQuestionsPage() {
   // Load questions when data is fetched
   useEffect(() => {
     if (screeningQuestionsData?.questions) {
-      setQuestions(screeningQuestionsData.questions);
+      // Ensure each question has a unique id for drag-and-drop and delete operations
+      const questionsWithIds = screeningQuestionsData.questions.map((q: any) => ({
+        ...q,
+        id: q.id || crypto.randomUUID(),
+      }));
+      setQuestions(questionsWithIds);
     } else {
       setQuestions([]);
     }
