@@ -527,11 +527,19 @@ serve(async (req) => {
           },
         });
     } else {
-        const updatePayload = action === 'fulfill'
-            ? { status: 'fulfilled', fulfilledAt: new Date().toISOString() }
-            : action === 'relist'
-              ? { status: 'active', fulfilledAt: null, postedAt: new Date().toISOString() }
-              : { status: 'draft', fulfilledAt: null };
+        let updatePayload: any = {};
+        if (action === 'fulfill') {
+            updatePayload = { status: 'fulfilled', fulfilledAt: new Date().toISOString(), isWpDraft: true };
+        } else if (action === 'relist') {
+            updatePayload = { status: 'active', fulfilledAt: null, postedAt: new Date().toISOString(), isWpDraft: false };
+        } else {
+            // action === 'close'
+            updatePayload = { 
+                isWpDraft: true,
+                status: posting.status === 'fulfilled' ? 'fulfilled' : 'draft',
+                fulfilledAt: posting.status === 'fulfilled' ? posting.fulfilledAt : null
+            };
+        }
 
         const { error } = await supabaseClient
             .from('jobPostings')

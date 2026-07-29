@@ -67,6 +67,7 @@ export default function MyPostingsPage() {
         createdAt: job.createdAt,
         postedAt: job.postedAt || job.createdAt,
         salaryRange: job.salaryRange || "",
+        isWpDraft: !!job.isWpDraft,
       }));
     }
   });
@@ -386,6 +387,12 @@ export default function MyPostingsPage() {
                     {posting.status === "open" || posting.status === "active" ? <Circle className="w-4 h-4 mr-1.5" /> : posting.status === "fulfilled" ? <CheckCircle2 className="w-4 h-4 mr-1.5" /> : <XCircle className="w-4 h-4 mr-1.5" />}
                     {posting.status === "open" || posting.status === "active" ? "Open" : posting.status === "fulfilled" ? "Fulfilled" : posting.status === "draft" ? "Draft" : posting.status}
                   </Badge>
+                  {posting.isWpDraft && (
+                    <Badge className="h-9 shrink-0 rounded-full px-3.5 text-sm font-semibold bg-amber-50 text-amber-700 border-amber-200">
+                      <XCircle className="w-4 h-4 mr-1.5" />
+                      Draft on WP
+                    </Badge>
+                  )}
                   <div className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-500 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
                     <Clock className="h-3.5 w-3.5 text-slate-400" />
                     <span>{posting.postedAt ? formatDistanceToNow(new Date(posting.postedAt), { addSuffix: true }) : "Posted recently"}</span>

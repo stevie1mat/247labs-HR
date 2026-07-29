@@ -20,6 +20,7 @@ import {
   Loader2,
   MoveUpRight,
   TrendingUp,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -73,7 +74,7 @@ export default function DashboardPage() {
       const [{ data: postings, error: postingsError }, { data: postingLogs, error: logsError }] = await Promise.all([
         supabase
           .from("jobPostings")
-          .select("id, title, status, salaryRange, createdAt, fulfilledAt")
+          .select("id, title, status, salaryRange, createdAt, fulfilledAt, isWpDraft")
           .order("createdAt", { ascending: false }),
         supabase
           .from("jobPostingLogs")
@@ -442,21 +443,29 @@ export default function DashboardPage() {
                       </div>
                     </TableCell>
                     <TableCell className="px-5 py-4 align-top">
-                      {statusLabel === "Fulfilled" ? (
-                        <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
-                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                          Fulfilled
-                        </Badge>
-                      ) : statusLabel === "Open" ? (
-                        <Badge className="rounded-full border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
-                          <Circle className="mr-1 h-3.5 w-3.5" />
-                          Open
-                        </Badge>
-                      ) : (
-                        <Badge className="rounded-full border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">
-                          {statusLabel}
-                        </Badge>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {statusLabel === "Fulfilled" ? (
+                          <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                            Fulfilled
+                          </Badge>
+                        ) : statusLabel === "Open" ? (
+                          <Badge className="rounded-full border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">
+                            <Circle className="mr-1 h-3.5 w-3.5" />
+                            Open
+                          </Badge>
+                        ) : (
+                          <Badge className="rounded-full border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">
+                            {statusLabel}
+                          </Badge>
+                        )}
+                        {row.isWpDraft && (
+                          <Badge className="rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                            <XCircle className="mr-1 h-3.5 w-3.5" />
+                            Draft on WP
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="px-5 py-4 align-top">
                       <div className={`flex items-center gap-1.5 text-sm font-medium ${ageToneClass(daysSincePosted)}`}>
